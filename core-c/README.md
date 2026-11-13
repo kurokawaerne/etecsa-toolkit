@@ -1,0 +1,3 @@
+# toolkit_c (C11)
+
+Small C11 library for the speed test's hot math: given timestamped cumulative byte-counter samples it computes download/upload bit rates (`tk_speed_stats`), ping mean and jitter (mean absolute successive difference), and formats rates for display ("500.00 bps", "1.24 Mbps", "2.50 Gbps") — pure functions with no globals or allocation, so it is cheap to call per sample. The app links it as a static library (CMake, the same build the Android NDK uses) and calls it through a thin JNI shim in the app module while a Cloudflare speed test streams; `cmake -B build && cmake --build build && ./build/toolkit_c_test` builds and runs the assertion test, which prints PASS.

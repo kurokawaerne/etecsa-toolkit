@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "catalogVersion": 1,
+  "plans": [
+    {"id":"data_2","category":"data","title":"2 GB","detail":"15 min · 20 SMS · 300 MB .cu","price":"120 CUP","code":"*133*1*4*2*1#"},
+    {"id":"data_4","category":"data","title":"4 GB","detail":"35 min · 40 SMS · 300 MB .cu","price":"240 CUP","code":"*133*1*4*3*1#"},
+    {"id":"data_6","category":"data","title":"6 GB","detail":"60 min · 70 SMS · 300 MB .cu","price":"360 CUP","code":"*133*1*4*4*1#"},
+    {"id":"data_45","category":"data","title":"4.5 GB","detail":"Sin min ni SMS · 300 MB .cu","price":"240 CUP","code":"*133*1*4*1*1#"},
+    {"id":"data_todus","category":"data","title":"1 GB","detail":"Solo toDus y Correo Nauta · 35 días","price":"25 CUP","code":"*133*1*2*1#"},
+    {"id":"data_daily","category":"data","title":"200 MB","detail":"Todas las redes · 24 horas","price":"25 CUP","code":"*133*1*3*1#"},
+    {"id":"voice_5","category":"voice","title":"5 min","detail":"Voz nacional · 35 días","price":"37.50 CUP","code":"*133*3*1*1#"},
+    {"id":"voice_10","category":"voice","title":"10 min","detail":"Voz nacional · 35 días","price":"72.50 CUP","code":"*133*3*2*1#"},
+    {"id":"voice_15","category":"voice","title":"15 min","detail":"Voz nacional · 35 días","price":"105 CUP","code":"*133*3*3*1#"},
+    {"id":"voice_25","category":"voice","title":"25 min","detail":"Voz nacional · 35 días","price":"162.50 CUP","code":"*133*3*4*1#"},
+    {"id":"voice_40","category":"voice","title":"40 min","detail":"Voz nacional · 35 días","price":"250 CUP","code":"*133*3*5*1#"},
+    {"id":"sms_20","category":"sms","title":"20 SMS","detail":"Mensajes nacionales · 35 días","price":"15 CUP","code":"*133*2*1*1#"},
+    {"id":"sms_50","category":"sms","title":"50 SMS","detail":"Mensajes nacionales · 35 días","price":"30 CUP","code":"*133*2*2*1#"},
+    {"id":"sms_90","category":"sms","title":"90 SMS","detail":"Mensajes nacionales · 35 días","price":"50 CUP","code":"*133*2*3*1#"},
+    {"id":"sms_120","category":"sms","title":"120 SMS","detail":"Mensajes nacionales · 35 días","price":"60 CUP","code":"*133*2*4*1#"}
+  ]
+}

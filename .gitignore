@@ -1,0 +1,61 @@
+# Gradle / Android
+.gradle/
+build/
+out/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+.navigation/
+
+# Signing — never commit keys or keystore passwords
+*.jks
+*.keystore
+keystore.properties
+key.properties
+
+# Kotlin
+.kotlin/
+
+# Rust (core-rust)
+target/
+Cargo.lock.orig
+**/*.rs.bk
+debug/
+
+# CMake / C (core-c)
+core-c/build/
+cmake-build-*/
+*.o
+*.so
+*.a
+*.dylib
+*.dll
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.vscode/
+
+# Logs / misc
+*.log
+hs_err_pid*
