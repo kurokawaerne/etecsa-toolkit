@@ -42,7 +42,7 @@ class AppState(
     var ussdBusy by mutableStateOf(false)
     var balance by mutableStateOf<ParsedResponse?>(null)
 
-    fun setLang(l: String) {
+    fun applyLang(l: String) {
         lang = l; store.put("lang", l); strings = stringsFor(l)
     }
     fun runUssd(code: String, title: String = code) {

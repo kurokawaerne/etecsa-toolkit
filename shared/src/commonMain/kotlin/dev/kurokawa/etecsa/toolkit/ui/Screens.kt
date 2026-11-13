@@ -203,7 +203,7 @@ fun SettingsScreen(state: AppState, dark: Boolean, onDark: (Boolean) -> Unit) {
                 listOf("English" to "en", "Español" to "es").forEachIndexed { i, (label, code) ->
                     ToggleButton(
                         checked = state.lang == code,
-                        onCheckedChange = { if (it) state.setLang(code) },
+                        onCheckedChange = { if (it) state.applyLang(code) },
                         shapes = if (i == 0) ButtonGroupDefaults.connectedLeadingButtonShapes()
                                  else ButtonGroupDefaults.connectedTrailingButtonShapes(),
                         modifier = Modifier.weight(1f).padding(horizontal = 1.dp),
