@@ -1,0 +1,62 @@
+name: release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create"
+        required: true
+        default: "v1.0.0"
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+      - name: Test native cores
+        run: |
+          cargo test --manifest-path core-rust/Cargo.toml
+          cmake -S core-c -B core-c/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build core-c/build
+          ./core-c/build/toolkit_c_test
+      - name: Build APKs (debug-signed, installable; release keystore plugs in via ETK_* secrets later)
+        run: ./gradlew :app:assembleDebug
+      - name: Collect assets
+        run: |
+          mkdir -p release-assets
+          python3 - << 'PY'
+          import glob, shutil, os
+          os.makedirs("release-assets", exist_ok=True)
+          for apk in sorted(glob.glob("app/build/outputs/apk/debug/*.apk")):
+              base = os.path.basename(apk)
+              # app-arm64-v8a-release.apk -> etecsa-toolkit-1.0.0-arm64-v8a.apk
+              abi = base.replace("app-","").replace("-debug.apk","").replace("debug.apk","universal")
+              shutil.copy(apk, f"release-assets/etecsa-toolkit-1.0.0-{abi}.apk")
+          PY
+          cd release-assets && sha256sum *.apk > SHA256SUMS.txt && ls -lh
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: ETECSA Toolkit ${{ inputs.tag }}
+          body: |
+            **ETECSA Toolkit 1.0.0 — initial release.** A clean-room Material 3 Expressive rewrite of RoCla USSD: every feature, no Pro, no trial.
+
+            - Smart USSD consults (*222# family) with per-SIM parsed history, plans catalogue (15 plans), transfers / PIN / Adelanta Saldo / recharge cards, Plan Amigos
+            - Smart SMS (queue, send-on-coverage, blocked senders, SMSC), antifraud Protect, call log + blocker
+            - Nauta portal + mailbox, ETECSA online services, useful numbers
+            - Network: coverage monitor with **coverage-back alarm** (new), LTE/cell info, Cloudflare speed test, traffic, per-app firewall (local VPN)
+            - Contacts with photos, global search, Play-Store-style Settings, animated splash, predictive back, notification bubbles, widgets
+            - Rust parser/antifraud core + C speed/traffic core; SQLite on-device; EN + ES
+            - New: always-visible SIM 1 / SIM 2 slot selector
+
+            Pick your ABI: most phones are **arm64-v8a**; `universal` works everywhere.
+          files: release-assets/*
