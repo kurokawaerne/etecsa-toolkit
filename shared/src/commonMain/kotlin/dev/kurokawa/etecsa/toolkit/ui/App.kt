@@ -242,16 +242,27 @@ private fun MainShell(state: AppState, dark: Boolean, onDark: (Boolean) -> Unit)
             }
         }
         // ── Floating native ShortNavigationBar (82.7% width, as mocked) ──
+        // NAV FIX (root cause proven on UDYAT 2026-11-13 by decompile +
+        // instrumented repro): material3 alpha05's ShortNavigationBar
+        // measure policies coerce every item's width UP to the bar's
+        // incoming minWidth, so any fillMaxWidth/width on the BAR itself
+        // inflates items to full bar width and pushes items 2..n off the
+        // bar (UDYAT v1.3.2 rendered only its first tab). The bar must
+        // receive LOOSE constraints: the chrome width lives on this
+        // wrapper Box (a plain Box does not propagate min constraints),
+        // and the bar only caps itself with widthIn.
         Column(
-            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp),
+            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp).fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+          Box(Modifier.fillMaxWidth(0.827f), contentAlignment = Alignment.Center) {
             ShortNavigationBar(
-                modifier = Modifier.fillMaxWidth(0.827f)
+                modifier = Modifier.widthIn(max = 552.dp)
                     .shadow(8.dp, RoundedCornerShape(36.dp)).clip(RoundedCornerShape(36.dp)),
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 contentColor = MaterialTheme.colorScheme.onSurface,
                 windowInsets = WindowInsets(0, 0, 0, 0),
+                arrangement = ShortNavigationBarArrangement.EqualWeight,
             ) {
                 ShortNavigationBarItem(
                     selected = tab == 0, onClick = { state.screen = "home" },
@@ -270,6 +281,7 @@ private fun MainShell(state: AppState, dark: Boolean, onDark: (Boolean) -> Unit)
                     icon = { Icon(if (tab == 3) MaterialSymbols.OutlinedFilled.Cell_tower else MaterialSymbols.Outlined.Cell_tower, contentDescription = null) },
                     label = { Text(s.network) })
             }
+          }
         }
     }
 }
