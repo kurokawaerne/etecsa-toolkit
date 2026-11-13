@@ -53,8 +53,9 @@ class AndroidBridge(private val ctx: Context) : DeviceBridge {
         fun deliver(text: String) { if (done.compareAndSet(false, true)) main.post { onResult(text) } }
         try {
             val tm = telephonyForSlot(slot)
-            val executor = java.util.concurrent.Executor { r -> Thread(r).start() }
-            tm.sendUssdRequest(code, executor, object : TelephonyManager.UssdResponseCallback() {
+            // Handler overload (API 26+): the Executor overload is
+            // ambiguous to Kotlin's overload resolution here.
+            tm.sendUssdRequest(code, object : TelephonyManager.UssdResponseCallback() {
                 override fun onReceiveUssdResponse(tm: TelephonyManager, request: String, response: CharSequence) {
                     deliver(response.toString())
                 }
@@ -64,7 +65,7 @@ class AndroidBridge(private val ctx: Context) : DeviceBridge {
                     dial(code)
                     deliver("USSD abierto en el marcador: $code")
                 }
-            })
+            }, main)
             // Safety timeout so the UI never spins forever
             main.postDelayed({ deliver("Sin respuesta de ETECSA (tiempo agotado): $code") }, 45_000)
         } catch (e: Exception) {
