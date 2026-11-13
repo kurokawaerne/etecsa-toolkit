@@ -253,27 +253,27 @@ private fun MainShell(state: AppState, dark: Boolean, onDark: (Boolean) -> Unit)
                 contentColor = MaterialTheme.colorScheme.onSurface,
                 windowInsets = WindowInsets(0, 0, 0, 0),
             ) {
-                NavItem(tab == 0, { state.screen = "home" }, MaterialSymbols.Outlined.Home, MaterialSymbols.OutlinedFilled.Home, s.home)
-                NavItem(tab == 1, { state.screen = "messages" }, MaterialSymbols.Outlined.Sms, MaterialSymbols.OutlinedFilled.Sms, s.messages)
-                NavItem(tab == 2, { state.screen = "calls" }, MaterialSymbols.Outlined.Call, MaterialSymbols.OutlinedFilled.Call, s.calls)
-                NavItem(tab == 3, { state.screen = "network" }, MaterialSymbols.Outlined.Cell_tower, MaterialSymbols.OutlinedFilled.Cell_tower, s.network)
+                ShortNavigationBarItem(
+                    selected = tab == 0, onClick = { state.screen = "home" },
+                    icon = { Icon(if (tab == 0) MaterialSymbols.OutlinedFilled.Home else MaterialSymbols.Outlined.Home, contentDescription = null) },
+                    label = { Text(s.home) })
+                ShortNavigationBarItem(
+                    selected = tab == 1, onClick = { state.screen = "messages" },
+                    icon = { Icon(if (tab == 1) MaterialSymbols.OutlinedFilled.Sms else MaterialSymbols.Outlined.Sms, contentDescription = null) },
+                    label = { Text(s.messages) })
+                ShortNavigationBarItem(
+                    selected = tab == 2, onClick = { state.screen = "calls" },
+                    icon = { Icon(if (tab == 2) MaterialSymbols.OutlinedFilled.Call else MaterialSymbols.Outlined.Call, contentDescription = null) },
+                    label = { Text(s.calls) })
+                ShortNavigationBarItem(
+                    selected = tab == 3, onClick = { state.screen = "network" },
+                    icon = { Icon(if (tab == 3) MaterialSymbols.OutlinedFilled.Cell_tower else MaterialSymbols.Outlined.Cell_tower, contentDescription = null) },
+                    label = { Text(s.network) })
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun RowScope.NavItem(
-    selected: Boolean, onClick: () -> Unit,
-    icon: ImageVector, selectedIcon: ImageVector, label: String,
-) {
-    ShortNavigationBarItem(
-        selected = selected, onClick = onClick,
-        icon = { Icon(if (selected) selectedIcon else icon, contentDescription = null) },
-        label = { Text(label) },
-    )
-}
 
 /** Connected ToggleButton group — the SIM slot selector. ALWAYS shows both
  *  slots, even with a single/undetected SIM (Ernest). Slot-based: choosing a

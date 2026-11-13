@@ -109,7 +109,7 @@ fun HomeScreen(state: AppState) {
 fun iconFor(id: String) = when (id) {
     "saldo" -> MaterialSymbols.Outlined.Account_balance_wallet
     "datos" -> MaterialSymbols.Outlined.Data_usage
-    "bonos" -> MaterialSymbols.Outlined.Card_giftcard
+    "bonos" -> MaterialSymbols.Outlined.Redeem
     "minutos" -> MaterialSymbols.Outlined.Call
     "smsq", "mensajes" -> MaterialSymbols.Outlined.Sms
     "pospago" -> MaterialSymbols.Outlined.Receipt_long
@@ -218,17 +218,17 @@ fun SettingsScreen(state: AppState, dark: Boolean, onDark: (Boolean) -> Unit) {
             ListItem(headlineContent = { Text(s.coverageMonitor) },
                 supportingContent = { Text(s.coverageAlarmDesc) },
                 trailingContent = {
-                    Switch(monitor) { on ->
+                    Switch(checked = monitor, onCheckedChange = { on ->
                         monitor = on; state.bridge.setCoverageMonitor(on, alarm)
-                    }
+                    })
                 })
             ListItem(headlineContent = { Text(s.coverageAlarm) },
                 supportingContent = { Text(s.coverageAlarmDesc) },
                 trailingContent = {
-                    Switch(alarm) { on ->
+                    Switch(checked = alarm, onCheckedChange = { on ->
                         alarm = on; state.store.put("cov_alarm", if (on) "1" else "0")
                         state.bridge.setCoverageMonitor(monitor, on)
-                    }
+                    })
                 })
         }
         item { SectionTitle(s.about) }
@@ -459,9 +459,9 @@ fun CardsScreen(state: AppState) {
                 })
         }
         Spacer(Modifier.height(12.dp))
-        OutlinedTextField(label, { label = it }, label = { Text("Etiqueta") }, singleLine = true, Modifier.fillMaxWidth())
+        OutlinedTextField(label, { label = it }, label = { Text("Etiqueta") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(number, { number = it }, label = { Text("Número de tarjeta") }, singleLine = true, Modifier.fillMaxWidth())
+        OutlinedTextField(number, { number = it }, label = { Text("Número de tarjeta") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
         Row {
             Button(onClick = {
@@ -489,7 +489,7 @@ fun SmscScreen(state: AppState) {
         Spacer(Modifier.height(12.dp))
         SimSelector(state)
         Spacer(Modifier.height(12.dp))
-        OutlinedTextField(smsc, { smsc = it }, label = { Text("SMSC") }, singleLine = true, Modifier.fillMaxWidth(),
+        OutlinedTextField(smsc, { smsc = it }, label = { Text("SMSC") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
             trailingIcon = {
                 IconButton(onClick = { state.store.put("smsc", smsc) }) {
                     Icon(MaterialSymbols.Outlined.Edit, contentDescription = state.strings.edit)
@@ -519,9 +519,9 @@ fun MessagesScreen(state: AppState) {
             Spacer(Modifier.height(8.dp))
             SimSelector(state)
             Spacer(Modifier.height(12.dp))
-            OutlinedTextField(to, { to = it }, label = { Text(s.number) }, singleLine = true, Modifier.fillMaxWidth())
+            OutlinedTextField(to, { to = it }, label = { Text(s.number) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(8.dp))
-            OutlinedTextField(text, { text = it }, label = { Text(s.messages) }, Modifier.fillMaxWidth())
+            OutlinedTextField(text, { text = it }, label = { Text(s.messages) }, modifier = Modifier.fillMaxWidth())
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(onCoverage, { onCoverage = it }); Text(s.sendOnCoverage)
             }
@@ -616,7 +616,7 @@ fun CallScreen(state: AppState) {
     var number by remember { mutableStateOf("") }
     ScreenScaffold(state, "Llamada normal") {
         OutlinedTextField(number, { number = it }, label = { Text(state.strings.number) },
-            singleLine = true, Modifier.fillMaxWidth())
+            singleLine = true, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(12.dp))
         Button(onClick = { state.bridge.call(number) }, enabled = number.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
             Icon(MaterialSymbols.Outlined.Call, null); Spacer(Modifier.width(8.dp)); Text(state.strings.dial)
@@ -638,7 +638,7 @@ fun CallBlockerScreen(state: AppState) {
     ScreenScaffold(state, "Bloqueador de llamadas") {
         Text("Los números bloqueados se descartan para llamadas y SMS (reglas locales, sin servidores).")
         Spacer(Modifier.height(12.dp))
-        OutlinedTextField(number, { number = it }, label = { Text(state.strings.number) }, singleLine = true, Modifier.fillMaxWidth())
+        OutlinedTextField(number, { number = it }, label = { Text(state.strings.number) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
         Button(onClick = {
             if (number.isNotBlank()) { state.store.setBlocked(number, true); blocked = state.store.blockedNumbers(); number = "" }
@@ -682,7 +682,7 @@ fun NautaMailScreen(state: AppState) {
     ScreenScaffold(state, "Buzón Nauta") {
         Text("Cuentas de correo @nauta.cu. Puedes guardar varias cuentas (en el original, las adicionales eran Pro; aquí, gratis).")
         Spacer(Modifier.height(12.dp))
-        OutlinedTextField(user, { user = it }, label = { Text("usuario@nauta.cu") }, singleLine = true, Modifier.fillMaxWidth(),
+        OutlinedTextField(user, { user = it }, label = { Text("usuario@nauta.cu") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
             trailingIcon = {
                 IconButton(onClick = { state.store.put("nauta_user", user) }) {
                     Icon(MaterialSymbols.Outlined.Edit, contentDescription = state.strings.edit)
@@ -752,14 +752,14 @@ fun NetworkScreen(state: AppState) {
             SimSelector(state)
             SectionTitle(s.coverageMonitor)
             ListItem(headlineContent = { Text(s.coverageMonitor) },
-                trailingContent = { Switch(monitor) { on -> monitor = on; state.bridge.setCoverageMonitor(on, alarm) } })
+                trailingContent = { Switch(checked = monitor, onCheckedChange = { on -> monitor = on; state.bridge.setCoverageMonitor(on, alarm) }) })
             ListItem(headlineContent = { Text(s.coverageAlarm) },
                 supportingContent = { Text(s.coverageAlarmDesc) },
                 trailingContent = {
-                    Switch(alarm) { on ->
+                    Switch(checked = alarm, onCheckedChange = { on ->
                         alarm = on; state.store.put("cov_alarm", if (on) "1" else "0")
                         state.bridge.setCoverageMonitor(monitor, on)
-                    }
+                    })
                 })
             SectionTitle("Celda / LTE")
             Text(cell.ifBlank { "—" }, style = MaterialTheme.typography.bodyMedium)
@@ -822,9 +822,9 @@ fun FirewallScreen(state: AppState) {
         apps.forEach { app ->
             ListItem(headlineContent = { Text(app.label) }, supportingContent = { Text(app.packageName) },
                 trailingContent = {
-                    Switch(blocked.contains(app.packageName)) { on ->
+                    Switch(checked = blocked.contains(app.packageName), onCheckedChange = { on ->
                         blocked = if (on) blocked + app.packageName else blocked - app.packageName
-                    }
+                    })
                 })
         }
     }
@@ -855,9 +855,9 @@ fun AntifraudScreen(state: AppState) {
     ScreenScaffold(state, "Protect — Antifraude") {
         Text("Analiza un SMS contra el catálogo de remitentes oficiales (ETECSA, Cubacel, Pago×Móvil, ENZONA…). Todo el análisis es local.")
         Spacer(Modifier.height(12.dp))
-        OutlinedTextField(sender, { sender = it }, label = { Text("Remitente") }, singleLine = true, Modifier.fillMaxWidth())
+        OutlinedTextField(sender, { sender = it }, label = { Text("Remitente") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(body, { body = it }, label = { Text("Mensaje") }, Modifier.fillMaxWidth())
+        OutlinedTextField(body, { body = it }, label = { Text("Mensaje") }, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(12.dp))
         Button(onClick = {
             verdict = when {

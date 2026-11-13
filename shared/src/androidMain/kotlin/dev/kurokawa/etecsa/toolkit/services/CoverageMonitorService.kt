@@ -27,7 +27,7 @@ class CoverageMonitorService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        startForeground(41, baseNotification("Monitor de cobertura activo"))
+        startForeground(41, baseNotification("Monitor de cobertura activo").build())
         val tm = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
         if (Build.VERSION.SDK_INT >= 31) {
             val cb = object : TelephonyCallback(), TelephonyCallback.ServiceStateListener {
@@ -76,7 +76,7 @@ class CoverageMonitorService : Service() {
                 val bubble = Notification.BubbleMetadata.Builder(bubbleIntent,
                     android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.stat_sys_phone_call))
                     .setDesiredHeight(400).build()
-                notif.bubbleMetadata = bubble
+                notif.setBubbleMetadata(bubble)
             } catch (_: Exception) {}
         }
         nm.notify(42, notif.build())

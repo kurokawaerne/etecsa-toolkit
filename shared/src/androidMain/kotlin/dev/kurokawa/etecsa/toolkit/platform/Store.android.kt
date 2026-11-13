@@ -151,6 +151,3 @@ class EtkStore(private val ctx: Context) : LocalStore {
         String(cipher.doFinal(Base64.decode(dataB64, Base64.NO_WRAP)), Charsets.UTF_8)
     } catch (_: Exception) { null }
 }
-
-actual fun createStore(): LocalStore =
-    EtkStore(EtkContext.appContext ?: throw IllegalStateException("EtkContext not set"))

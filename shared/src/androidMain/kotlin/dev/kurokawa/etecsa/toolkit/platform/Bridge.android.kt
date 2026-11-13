@@ -54,7 +54,7 @@ class AndroidBridge(private val ctx: Context) : DeviceBridge {
         try {
             val tm = telephonyForSlot(slot)
             val executor = java.util.concurrent.Executor { r -> Thread(r).start() }
-            tm.requestUssd(code, executor, object : TelephonyManager.UssdResponseCallback() {
+            tm.sendUssdRequest(code, executor, object : TelephonyManager.UssdResponseCallback() {
                 override fun onReceiveUssdResponse(tm: TelephonyManager, request: String, response: CharSequence) {
                     deliver(response.toString())
                 }
@@ -266,6 +266,3 @@ class AndroidBridge(private val ctx: Context) : DeviceBridge {
 
     override fun nautaPortal() = openUrl("https://secure.etecsa.net:8443/")
 }
-
-actual fun createBridge(): DeviceBridge =
-    AndroidBridge(EtkContext.appContext ?: throw IllegalStateException("EtkContext not set"))
