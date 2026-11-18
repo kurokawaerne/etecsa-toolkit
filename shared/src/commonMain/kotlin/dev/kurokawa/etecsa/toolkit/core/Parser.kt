@@ -10,6 +10,8 @@ data class ParsedResponse(
     val transferAmount: Double? = null,
     val transferNumber: String? = null,
     val planName: String? = null,
+    /** Raw expiry date text from the reply (dd/mm/yyyy), when present. */
+    val expires: String? = null,
     val kind: Kind = Kind.UNKNOWN,
 ) { enum class Kind { BALANCE, TRANSFER_CONFIRMATION, PLAN_PURCHASE, GENERIC, UNKNOWN } }
 
@@ -32,6 +34,7 @@ object ResponseParser {
     private val smsRe = Regex("""(?i)(?:SMSs?|Mensajes?)\s*:?\s*([0-9]+)""")
     private val transferRe = Regex("""(?iu)(?:ha\s+transferido|transferencia\s+(?:realizada|enviada)).*?([0-9]+(?:[.,][0-9]+)?)\s*CUP.*?(?:al\s+n[uú]mero\s+|al\s+)?([0-9]{8})""")
     private val planRe = Regex("""(?iu)(?:Se\s+ha\s+comprado|Ha\s+comprado|Ha\s+adquirido)\s+Plan\s+(.+?)(?:\.|$)""")
+    private val expiresRe = Regex("""(?i)(?:v[aá]lid[oa]\s+hasta(?:\s+el)?|vence(?:\s+el)?|vigencia\s+hasta(?:\s+el)?)\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})""")
 
     fun parse(text: String): ParsedResponse {
         if (text.isBlank()) return ParsedResponse()
@@ -51,9 +54,30 @@ object ResponseParser {
         }
         val voice = voiceRe.find(text)?.groupValues?.get(1)?.toIntOrNull()
         val sms = smsRe.find(text)?.groupValues?.get(1)?.toIntOrNull()
+        val exp = expiresRe.find(text)?.groupValues?.get(1)
         val kind = if (bal != null || data != null || voice != null || sms != null)
             ParsedResponse.Kind.BALANCE else ParsedResponse.Kind.GENERIC
-        return ParsedResponse(bal, data, voice, sms, kind = kind)
+        return ParsedResponse(bal, data, voice, sms, expires = exp, kind = kind)
+    }
+
+    /** Reminder instant for an expiry date: the day BEFORE, ~09:00 Havana
+     *  (13:00 UTC; 08:00 in winter time). Null when unparseable or past.
+     *  Date math is days-from-civil (Howard Hinnant's algorithm). */
+    fun expiryReminderMillis(expires: String, nowMs: Long): Long? {
+        val m = Regex("""([0-9]{1,2})[/-]([0-9]{1,2})[/-]([0-9]{2,4})""").find(expires) ?: return null
+        val d = m.groupValues[1].toIntOrNull() ?: return null
+        val mo = m.groupValues[2].toIntOrNull() ?: return null
+        var y = m.groupValues[3].toIntOrNull() ?: return null
+        if (y < 100) y += 2000
+        val yy = if (mo <= 2) y - 1 else y
+        val era = (if (yy >= 0) yy else yy - 399) / 400
+        val yoe = yy - era * 400
+        val mp = (mo + 9) % 12
+        val doy = (153 * mp + 2) / 5 + d - 1
+        val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+        val days = era * 146097L + doe - 719468L
+        val at = (days - 1) * 86400000L + 13L * 3600000L
+        return if (at > nowMs) at else null
     }
 
     fun formatData(bytes: Long): String = when {
