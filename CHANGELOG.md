@@ -3,6 +3,23 @@
 All notable changes to ETECSA Toolkit are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/), versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.2.0]
+
+The original RoCla layout, rebuilt with real Material 3 Expressive components.
+
+### Changed
+- Home rebuilt on the original's own layout (extracted from RoCla 5.4.3): consult card with the SIM 1/2 selector, balance / data / voice / SMS values, validity and a live last-consult stamp; signal card with a live level reading; Favoritos tile grid (max 6, long-press to pin) and a Servicios grid that never repeats a favorite; flat tiles, one per service
+- Every tab is its own page (Inicio · Llamadas · Mensajes · Planes); global search is its own screen on the official MD3E SearchBar
+- Official MD3E components throughout: HorizontalFloatingToolbar navigation (spring-animated pills), ButtonGroup + ToggleButton SIM selector, AssistChip, LinearWavyProgressIndicator, LoadingIndicator
+- Dynamic color (Material You) on Android 12+; the theme previously used only the fixed scheme
+- Google Sans Flex ships as static font instances — the variable font's weights were ignored on Android, so display type now renders as designed
+- The app mark is Ernest's 'e' disc everywhere (launcher icon, splash, header, Settings); gradients live only in the logo, never in in-app elements
+
+### Added (restored from the original, missing in 1.0.0)
+- Scheduled SMS end-to-end (exact alarms, compose presets), quick replies, keyword auto-reply, SMS segment counter
+- All three original home-screen widgets (resource, compact, multi-line), fed by every consult
+- Monthly transfer totals; the in-call suite (default-dialer in-call screen, cut timer, respond-via-message); remind-me from the call log; birthday reminders; floating traffic overlay; consult auto-sync (*222# every 6/12/24 h, survives reboots); plan-expiry reminders
+
 ## [1.0.0] — Initial release
 
 The first release of ETECSA Toolkit: a clean-room Material 3 Expressive rewrite of RoCla USSD 5.4.3 (feature inventory in [docs/REVERSE-ENGINEERING.md](docs/REVERSE-ENGINEERING.md)), with **every feature free — no Pro, no trial, no licence**. The original gates features behind a 250 CUP / 365-day Pro subscription (Material You, widgets, non-contact SMS blocking, send-on-coverage, extra Nauta accounts, and more); all of them are simply included here.
