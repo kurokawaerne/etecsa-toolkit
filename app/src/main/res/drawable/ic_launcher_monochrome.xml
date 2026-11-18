@@ -1,10 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon layer: Ernest's mark, single colour (system tints it). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#000000" android:pathData="M30,72 L38,72 L38,60 L30,60 Z" />
-    <path android:fillColor="#000000" android:pathData="M42,72 L50,72 L50,50 L42,50 Z" />
-    <path android:fillColor="#000000" android:pathData="M54,72 L62,72 L62,40 L54,40 Z" />
-    <path android:fillColor="#000000" android:pathData="M66,72 L74,72 L74,30 L66,30 Z" />
-    <path android:fillColor="#000000" android:pathData="M28,76 L76,76 L76,79 L28,79 Z" />
+    <path android:pathData="M75.24,46.80L35.74,85.03C30.91,82.19 26.81,78.25 23.77,73.56L52.32,46.80L75.24,46.80ZM71.19,22.36L21.25,68.97C19.16,64.41 18.00,59.34 18.00,54.00C18.00,34.12 34.12,18.00 54.00,18.00C60.22,18.00 66.08,19.58 71.19,22.36ZM40.50,87.38C44.67,89.07 49.23,90.00 54.00,90.00C70.12,90.00 83.76,79.40 88.35,64.80L63.84,64.80L40.50,87.38Z" android:fillType="evenOdd"
+        android:fillColor="#FF000000" />
 </vector>

@@ -1,12 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Ernest's ETECSA "e" mark (his SVG), rebuilt as a proper adaptive-icon
+     foreground: glyph spans 18..90 on the 108 canvas, i.e. exactly the
+     72dp safe-zone circle, centred. Google-style diagonal gradient fill. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <!-- signal bars, ascending -->
-    <path android:fillColor="#FFFFFF" android:pathData="M30,72 L38,72 L38,60 L30,60 Z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M42,72 L50,72 L50,50 L42,50 Z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M54,72 L62,72 L62,40 L54,40 Z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M66,72 L74,72 L74,30 L66,30 Z" />
-    <!-- baseline -->
-    <path android:fillColor="#FFFFFF" android:pathData="M28,76 L76,76 L76,79 L28,79 Z" />
+    <path android:pathData="M75.24,46.80L35.74,85.03C30.91,82.19 26.81,78.25 23.77,73.56L52.32,46.80L75.24,46.80ZM71.19,22.36L21.25,68.97C19.16,64.41 18.00,59.34 18.00,54.00C18.00,34.12 34.12,18.00 54.00,18.00C60.22,18.00 66.08,19.58 71.19,22.36ZM40.50,87.38C44.67,89.07 49.23,90.00 54.00,90.00C70.12,90.00 83.76,79.40 88.35,64.80L63.84,64.80L40.50,87.38Z" android:fillType="evenOdd">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear"
+                android:startX="18" android:startY="18"
+                android:endX="90" android:endY="90">
+                <item android:color="#FF0099E8" android:offset="0" />
+                <item android:color="#FF3563E8" android:offset="0.45" />
+                <item android:color="#FF7B3FE4" android:offset="0.78" />
+                <item android:color="#FFD63FA0" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>
