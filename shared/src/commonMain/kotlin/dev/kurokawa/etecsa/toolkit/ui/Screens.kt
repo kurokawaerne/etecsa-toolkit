@@ -1,4 +1,12 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package dev.kurokawa.etecsa.toolkit.ui
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 
 import com.composables.icons.materialsymbols.MaterialSymbols
 import com.composables.icons.materialsymbols.outlined.*
@@ -6,15 +14,21 @@ import com.composables.icons.materialsymbols.outlinedfilled.*
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.kurokawa.etecsa.toolkit.core.*
@@ -22,70 +36,366 @@ import dev.kurokawa.etecsa.toolkit.model.*
 
 // ───────────────────────── Home ─────────────────────────
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun HomeScreen(state: AppState) {
+    // ── v1.2 Home, rebuilt from the ORIGINAL's own layout (RoCla 5.4.3,
+    // MainActivity + home_*_v* tags): consult header card with the SIM
+    // selector, signal card, Favoritos tile grid (max 6), Servicios tile
+    // grid. No global chrome: this page carries its own top row. ──
     val s = state.strings
+    val scheme = MaterialTheme.colorScheme
     var inputFor by remember { mutableStateOf<ServiceItem?>(null) }
     var inputText by remember { mutableStateOf("") }
+    var favTick by remember { mutableStateOf(0) }
+    val favorites = remember(favTick) {
+        val ids = (state.store.get("favorites")
+            ?: "saldo,datos,bonos,minutos,smsq,amigos").split(",")
+        ids.mapNotNull { id -> Services.firstOrNull { it.id == id } }.take(6)
+    }
+    fun toggleFavorite(item: ServiceItem) {
+        val ids = favorites.map { it.id }.toMutableList()
+        if (item.id in ids) ids.remove(item.id)
+        else if (ids.size < 6) ids.add(item.id)
+        state.store.put("favorites", ids.joinToString(","))
+        favTick++
+    }
+    fun open(item: ServiceItem) = openService(state, item) { inputFor = it; inputText = "" }
+    val level = remember(state.slot) { state.bridge.signalLevel(state.slot) }
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 20.dp),
         contentPadding = PaddingValues(bottom = 110.dp),
     ) {
-        item { SimSelector(state) }
-        // Balance card
+        // Top row — Home only: mark + wordmark + history + settings
+        item {
+            // Home-only top row: the brand mark + wordmark + actions.
+            // Search is an ICON here (v1.2.1 verdict: the full-width pill
+            // read as the old v1.0 search bar) — it opens the Search screen.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                EtkMark(Modifier.size(36.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(s.appName, style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false,
+                    modifier = Modifier.weight(1f))
+                IconButton(onClick = { state.screen = "search" }) {
+                    Icon(MaterialSymbols.Outlined.Search, contentDescription = s.searchHint)
+                }
+                IconButton(onClick = { state.screen = "history" }) {
+                    Icon(MaterialSymbols.Outlined.History, contentDescription = s.history)
+                }
+                IconButton(onClick = { state.screen = "settings" }) {
+                    Icon(MaterialSymbols.Outlined.Settings, contentDescription = s.settings)
+                }
+            }
+        }
+        // Consult header card (the original's home_consult_* block):
+        // SIM selector, resource values, validity, last-consult stamp.
         item {
             Spacer(Modifier.height(14.dp))
-            Card(
-                Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                shape = RoundedCornerShape(28.dp),
+            // Consult card on the SCHEME's primaryContainer — it follows
+            // dynamic color on device. NO gradient here (Ernest, 2026-11-17:
+            // gradients are for the logo only, never for in-app elements).
+            // Spring entrance motion; the live last-consult stamp is the
+            // dynamic state (a real consult stamps it — see AppState).
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
+                    + scaleIn(initialScale = 0.96f, animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow)),
             ) {
-                Column(Modifier.padding(20.dp)) {
-                    Text(s.balance, style = MaterialTheme.typography.labelLarge)
-                    val b = state.balance
-                    Text(
-                        if (b?.balanceCup != null) "${b.balanceCup} CUP" else "— CUP",
-                        style = MaterialTheme.typography.displaySmall,
-                    )
-                    Row {
-                        b?.dataBytes?.let { Text("Datos ${ResponseParser.formatData(it)}  ·  ") }
-                        b?.voiceMinutes?.let { Text("Voz $it min  ·  ") }
-                        b?.smsCount?.let { Text("SMS $it") }
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Button(onClick = { state.runUssd("*222#", "Saldo") }) {
-                        Icon(MaterialSymbols.Outlined.Refresh, null); Spacer(Modifier.width(8.dp)); Text(s.consult)
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = scheme.primaryContainer),
+                    shape = RoundedCornerShape(28.dp),
+                ) {
+                    val onHero = scheme.onPrimaryContainer
+                    Column(Modifier.padding(20.dp)) {
+                        SimSelector(state)
+                        Spacer(Modifier.height(14.dp))
+                        Text(s.balance, style = MaterialTheme.typography.labelLarge,
+                            color = onHero.copy(alpha = 0.85f))
+                        val b = state.balance
+                        Text(
+                            if (b?.balanceCup != null) "${b.balanceCup} CUP" else "— CUP",
+                            style = MaterialTheme.typography.displayMedium, color = onHero,
+                        )
+                        Row {
+                            b?.dataBytes?.let { Text("Datos ${ResponseParser.formatData(it)}  ·  ", color = onHero) }
+                            b?.voiceMinutes?.let { Text("Voz $it min  ·  ", color = onHero) }
+                            b?.smsCount?.let { Text("SMS $it", color = onHero) }
+                        }
+                        b?.expires?.let {
+                            Text("Válido hasta el $it", style = MaterialTheme.typography.bodySmall,
+                                color = onHero.copy(alpha = 0.85f))
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val last = state.store.get("last_consult_ms")?.toLongOrNull()
+                            Text(
+                                when {
+                                    last == null -> "Sin consultas aún"
+                                    else -> {
+                                        val mins = (nowMillis() - last) / 60000
+                                        if (mins < 1) "Última consulta: ahora mismo"
+                                        else if (mins < 60) "Última consulta: hace $mins min"
+                                        else "Última consulta: hace ${mins / 60} h"
+                                    }
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = onHero.copy(alpha = 0.85f),
+                                modifier = Modifier.weight(1f),
+                            )
+                            Button(onClick = { state.runUssd("*222#", "Saldo") }) {
+                                Icon(MaterialSymbols.Outlined.Refresh, null); Spacer(Modifier.width(8.dp)); Text(s.consult)
+                            }
+                        }
                     }
                 }
             }
         }
-        // Services grouped in categories
-        Category.entries.forEach { cat ->
-            val itemsInCat = Services.filter { it.category == cat }
-            if (itemsInCat.isEmpty()) return@forEach
-            item { SectionTitle(if (state.lang == "es") cat.es else cat.en) }
-            items(itemsInCat) { item ->
-                ListItem(
-                    headlineContent = { Text(item.titleEs) },
-                    supportingContent = { Text(item.descEs) },
-                    leadingContent = {
-                        Icon(iconFor(item.id), null, tint = MaterialTheme.colorScheme.primary)
-                    },
-                    trailingContent = { Icon(MaterialSymbols.Outlined.Chevron_right, null) },
-                    modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable {
-                        when {
-                            item.action.startsWith("screen:") -> state.screen = item.action.removePrefix("screen:")
-                            item.action.startsWith("tel:") -> state.bridge.call(item.action.removePrefix("tel:"))
-                            item.inputLabel != null -> { inputFor = item; inputText = "" }
-                            item.inputIsCall -> { inputFor = item; inputText = "" }
-                            else -> state.runUssd(item.action, item.titleEs)
+        // Signal card (home_signal_card_v4154): the quality is a live
+        // bridge reading, shown with the official AssistChip + the
+        // expressive wavy level indicator — no custom chip, no hardcoded
+        // traffic-light colors (scheme colors follow dynamic color).
+        item {
+            Spacer(Modifier.height(12.dp))
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                shape = RoundedCornerShape(28.dp),
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(MaterialSymbols.Outlined.Signal_cellular_alt, null,
+                            tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("Señal", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        val label = when (level) {
+                            4 -> "Excelente"; 3 -> "Buena"; 2 -> "Débil"
+                            1, 0 -> "Mala"; else -> "No disp"
                         }
-                    },
-                )
+                        AssistChip(
+                            onClick = { state.screen = "network" },
+                            label = { Text(label) },
+                            leadingIcon = {
+                                Icon(MaterialSymbols.Outlined.Signal_cellular_alt, null,
+                                    modifier = Modifier.size(18.dp))
+                            },
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    LinearWavyProgressIndicator(
+                        progress = { level.coerceIn(0, 4) / 4f },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
+        }
+        // Favoritos — tile grid, max 6 (the original's C1())
+        item { SectionHeader("Favoritos") }
+        if (favorites.isEmpty()) {
+            item {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                    shape = RoundedCornerShape(27.dp),
+                ) {
+                    Text("No tienes accesos favoritos.", Modifier.padding(horizontal = 17.dp, vertical = 22.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        } else {
+            items(favorites.chunked(3)) { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    row.forEach { item ->
+                        ServiceTile(item, Modifier.weight(1f), onClick = { open(item) },
+                            onLongPress = { toggleFavorite(item) })
+                    }
+                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+        }
+        // Servicios — the tile grid MINUS the favorites (home_services_grid_v3257).
+        // The favorites grid above and this one never repeat an item.
+        item { SectionHeader("Servicios") }
+        items(Services.filter { it.id !in favorites.map { fav -> fav.id }.toSet() }.chunked(3)) { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { item ->
+                    ServiceTile(item, Modifier.weight(1f), onClick = { open(item) },
+                        onLongPress = { toggleFavorite(item) })
+                }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+        item {
+            Text("Mantén pulsado un servicio para fijarlo en Favoritos (máx. 6).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp))
         }
     }
     // Input dialog for {input} services (recharge card, *99, private call)
+    inputFor?.let { item ->
+        AlertDialog(
+            onDismissRequest = { inputFor = null },
+            title = { Text(item.titleEs) },
+            text = {
+                OutlinedTextField(inputText, { inputText = it }, label = { Text(item.inputLabel ?: s.number) },
+                    singleLine = true, modifier = Modifier.fillMaxWidth())
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val code = item.action.replace("{input}", inputText.trim())
+                    inputFor = null
+                    if (item.inputIsCall) state.bridge.call(code) else state.runUssd(code, item.titleEs)
+                }) { Text(s.confirm) }
+            },
+            dismissButton = { TextButton(onClick = { inputFor = null }) { Text(s.cancel) } },
+        )
+    }
+}
+
+/** The original's small-caps section label (C5: 10sp bold, tracked,
+ *  secondary, 17dp above / 9dp below). */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun SectionHeader(text: String) {
+    Text(
+        text.uppercase(),
+        style = MaterialTheme.typography.labelLargeEmphasized.copy(letterSpacing = 1.2.sp),
+        color = MaterialTheme.colorScheme.tertiary,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 3.dp, top = 17.dp, bottom = 9.dp),
+    )
+}
+
+/** Per-service accent (the original colours each service's glyph). */
+fun colorFor(id: String): Color = when (id) {
+    "saldo", "pospago" -> Color(0xFF2E7D32)
+    "datos", "disponibilidad" -> Color(0xFF1565C0)
+    "bonos" -> Color(0xFFEF6C00)
+    "minutos", "llamada_normal", "cobrar", "privada" -> Color(0xFF00838F)
+    "smsq" -> Color(0xFF6A1B9A)
+    "amigos" -> Color(0xFFFF4F91)
+    "nauta", "nauta_mailbox" -> Color(0xFF0277BD)
+    "etecsa_services" -> Color(0xFF3949AB)
+    "comprar" -> Color(0xFFAD1457)
+    "transferir" -> Color(0xFF4527A0)
+    "adelanta_saldo" -> Color(0xFFF9A825)
+    "antifraud" -> Color(0xFFC62828)
+    "firewall", "call_blocker" -> Color(0xFF37474F)
+    "speed", "traffic_monitor", "lte_monitor" -> Color(0xFF00695C)
+    else -> Color(0xFF0057A8)
+}
+
+/** Home tile: rounded-27 card, 50dp coloured glyph, 12sp bold label —
+ *  the original's grid tile (favorites O() / services R()). */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun ServiceTile(item: ServiceItem, modifier: Modifier = Modifier,
+                onClick: () -> Unit, onLongPress: () -> Unit) {
+    Card(
+        modifier.combinedClickable(onClick = onClick, onLongClick = onLongPress),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        shape = RoundedCornerShape(32.dp),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 7.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            // One flat tile: the icon sits straight on it (the original's
+            // tile language). The inner solid tile (tile-in-tile) is gone.
+            Icon(iconFor(item.id), null, tint = colorFor(item.id), modifier = Modifier.size(44.dp))
+            Spacer(Modifier.height(8.dp))
+            Text(item.titleEs, style = MaterialTheme.typography.labelLargeEmphasized,
+                maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        }
+    }
+}
+
+/** The original's w5 row (sheets/lists): rounded-22 card, 44dp rounded-16
+ *  accent tile with white 23dp glyph, 14sp bold title, 10sp description,
+ *  trailing chevron. */
+@Composable
+fun ServiceRow(item: ServiceItem, onClick: () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth().clickable { onClick() },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        shape = RoundedCornerShape(22.dp),
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(16.dp)).background(colorFor(item.id)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(iconFor(item.id), null, tint = Color.White, modifier = Modifier.size(23.dp)) }
+            Spacer(Modifier.width(11.dp))
+            Column(Modifier.weight(1f)) {
+                Text(item.titleEs, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(item.descEs, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            }
+            Icon(MaterialSymbols.Outlined.Chevron_right, null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+/** Shared service dispatch (Home tiles, search results). */
+fun openService(state: AppState, item: ServiceItem, onInput: (ServiceItem) -> Unit) {
+    when {
+        item.action.startsWith("screen:") -> state.screen = item.action.removePrefix("screen:")
+        item.action.startsWith("tel:") -> state.bridge.call(item.action.removePrefix("tel:"))
+        item.inputLabel != null || item.inputIsCall -> onInput(item)
+        else -> state.runUssd(item.action, item.titleEs)
+    }
+}
+
+// ───────────────────────── Search ─────────────────────────
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun SearchScreen(state: AppState) {
+    // Ernest's global search as its own screen, on the OFFICIAL MD3E
+    // SearchBar (official-component-first rule) — the plain TextField
+    // version read as baseline M3, not Expressive.
+    val s = state.strings
+    var query by remember { mutableStateOf("") }
+    var inputFor by remember { mutableStateOf<ServiceItem?>(null) }
+    var inputText by remember { mutableStateOf("") }
+    val hits = remember(query) {
+        if (query.isBlank()) emptyList()
+        else Services.filter {
+            it.titleEs.contains(query, true) || it.descEs.contains(query, true) || it.action.contains(query)
+        } + Plans.filter { it.title.contains(query, true) || it.code.contains(query) }
+            .map { ServiceItem("plan_" + it.id, Category.PLANS, it.title, it.detail + " · " + it.price, it.code) }
+    }
+    SearchBar(
+        inputField = {
+            SearchBarDefaults.InputField(
+                query = query, onQueryChange = { query = it },
+                onSearch = {}, expanded = true,
+                onExpandedChange = { if (!it) state.back() },
+                placeholder = { Text(s.searchHint) },
+                leadingIcon = {
+                    IconButton(onClick = { state.back() }) {
+                        Icon(MaterialSymbols.Outlined.Arrow_back, contentDescription = null)
+                    }
+                },
+            )
+        },
+        expanded = true, onExpandedChange = { if (!it) state.back() },
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+    ) {
+        LazyColumn(contentPadding = PaddingValues(start = 20.dp, top = 8.dp, end = 20.dp, bottom = 110.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(hits) { item ->
+                ServiceRow(item) {
+                    openService(state, item) { inputFor = it; inputText = "" }
+                }
+            }
+        }
+    }
     inputFor?.let { item ->
         AlertDialog(
             onDismissRequest = { inputFor = null },
@@ -171,24 +481,28 @@ fun SettingsScreen(state: AppState, dark: Boolean, onDark: (Boolean) -> Unit) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { state.back() }) { Icon(MaterialSymbols.Outlined.Arrow_back, null) }
-                Text(s.settings, style = MaterialTheme.typography.headlineSmall)
+                Text(s.settings, style = MaterialTheme.typography.headlineMedium)
             }
-            // Profile header card — like Play Store's account panel
+            // Brand header card on the scheme's primaryContainer (dynamic
+            // color). The "e" disc keeps gradient A — the logo is the only
+            // place a gradient lives (Ernest, 2026-11-17).
             Card(
                 Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
                 shape = RoundedCornerShape(28.dp),
             ) {
                 Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                    AppMark(Modifier.size(56.dp))
+                    EtkMark(Modifier.size(56.dp))
                     Spacer(Modifier.width(16.dp))
                     Column {
-                        Text(s.appName, style = MaterialTheme.typography.titleLarge)
-                        Text("${s.version} 1.0.0 · dev.kurokawa.etecsa.toolkit",
-                            style = MaterialTheme.typography.bodySmall)
+                        val onCard = MaterialTheme.colorScheme.onPrimaryContainer
+                        Text(s.appName, style = MaterialTheme.typography.titleLarge, color = onCard)
+                        Text("${s.version} 1.2.0 · dev.kurokawa.etecsa.toolkit",
+                            style = MaterialTheme.typography.bodySmall, color = onCard.copy(alpha = 0.85f))
                         val sims = remember { state.bridge.simSlots() }
                         Text(sims.filter { it.detected }.joinToString(" · ") { "${it.carrier} ${it.number}".trim() }
-                            .ifBlank { "—" }, style = MaterialTheme.typography.bodySmall)
+                            .ifBlank { "—" }, style = MaterialTheme.typography.bodySmall,
+                            color = onCard.copy(alpha = 0.85f))
                     }
                 }
             }
@@ -211,7 +525,6 @@ fun SettingsScreen(state: AppState, dark: Boolean, onDark: (Boolean) -> Unit) {
                 }
             }
         }
-        item { SectionTitle(s.simForQueries) }
         item { SimSelector(state) }
         item { SectionTitle(s.coverageMonitor) }
         item {
@@ -249,21 +562,31 @@ fun SettingsScreen(state: AppState, dark: Boolean, onDark: (Boolean) -> Unit) {
 
 @Composable
 fun PlansScreen(state: AppState) {
+    // Planes is a TAB (the original's 4th nav destination) — it gets its
+    // own title row, no back arrow (v1.2 fix: it used ScreenScaffold).
     val s = state.strings
     var pending by remember { mutableStateOf<Plan?>(null) }
-    ScreenScaffold(state, s.plans) {
-        listOf("data" to "Datos", "voice" to "Voz", "sms" to "SMS").forEach { (cat, label) ->
-            SectionTitle(label)
-            Plans.filter { it.category == cat }.forEach { plan ->
-                Card(Modifier.fillMaxWidth().padding(vertical = 4.dp), shape = RoundedCornerShape(24.dp)) {
-                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(plan.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text(plan.detail, style = MaterialTheme.typography.bodySmall)
-                            Text("${s.price}: ${plan.price}", style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary)
+    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(s.plans, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+            IconButton(onClick = { state.screen = "history" }) {
+                Icon(MaterialSymbols.Outlined.History, contentDescription = s.history)
+            }
+        }
+        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 110.dp)) {
+            listOf("data" to "Datos", "voice" to "Voz", "sms" to "SMS").forEach { (cat, label) ->
+                item { SectionHeader(label) }
+                items(Plans.filter { it.category == cat }) { plan ->
+                    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp), shape = RoundedCornerShape(24.dp)) {
+                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(plan.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(plan.detail, style = MaterialTheme.typography.bodySmall)
+                                Text("${s.price}: ${plan.price}", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary)
+                            }
+                            Button(onClick = { pending = plan }) { Text(s.buy) }
                         }
-                        Button(onClick = { pending = plan }) { Text(s.buy) }
                     }
                 }
             }
@@ -281,8 +604,6 @@ fun PlansScreen(state: AppState) {
         )
     }
 }
-
-// ───────────────────────── Transfer ─────────────────────────
 
 @Composable
 fun TransferScreen(state: AppState) {
@@ -330,6 +651,29 @@ fun TransferScreen(state: AppState) {
         ) { Icon(MaterialSymbols.Outlined.Payments, null); Spacer(Modifier.width(8.dp)); Text(s.send) }
         Text("ETECSA permite máx. 3 transferencias al día.", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Monthly totals (the original tracks them): sum this month's
+        // transfer history entries, amounts ride in the entry body.
+        val monthStart = remember { monthStartMillis() }
+        val monthTransfers = remember { state.store.history(500).filter { it.kind == "transfer" && it.ts >= monthStart } }
+        if (monthTransfers.isNotEmpty()) {
+            val total = monthTransfers.sumOf { it.body.substringBefore(" CUP").toDoubleOrNull() ?: 0.0 }
+            Spacer(Modifier.height(12.dp))
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                shape = RoundedCornerShape(20.dp),
+            ) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(MaterialSymbols.Outlined.Payments, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text("Este mes", style = MaterialTheme.typography.labelLarge)
+                        Text("$total CUP en ${monthTransfers.size} transferencia(s)",
+                            style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
     }
     if (showContacts) {
         val contacts = remember { state.bridge.contacts() }
@@ -501,113 +845,579 @@ fun SmscScreen(state: AppState) {
 
 // ───────────────────────── Messages ─────────────────────────
 
+/** Quick replies (the original's respuestas rápidas): prefs-backed chips.
+ *  Tap inserts into the draft; the last chip opens the manager (add/delete). */
+@Composable
+fun QuickRepliesRow(state: AppState, onPick: (String) -> Unit) {
+    var replies by remember { mutableStateOf(state.store.get("quick_replies")?.split("\n")?.filter { it.isNotBlank() } ?: emptyList()) }
+    var manage by remember { mutableStateOf(false) }
+    fun persist(list: List<String>) {
+        replies = list
+        state.store.put("quick_replies", list.joinToString("\n"))
+    }
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(replies) { r ->
+            AssistChip(onClick = { onPick(r) }, label = { Text(r, maxLines = 1) })
+        }
+        item {
+            AssistChip(onClick = { manage = true },
+                label = { Text("Respuestas rápidas +") },
+                leadingIcon = { Icon(MaterialSymbols.Outlined.Quickreply, null) })
+        }
+    }
+    if (manage) {
+        var newReply by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { manage = false },
+            title = { Text("Respuestas rápidas") },
+            text = {
+                Column {
+                    replies.forEach { r ->
+                        ListItem(headlineContent = { Text(r) },
+                            trailingContent = {
+                                IconButton(onClick = { persist(replies - r) }) { Icon(MaterialSymbols.Outlined.Delete, null) }
+                            })
+                    }
+                    if (replies.isEmpty()) Text(state.strings.empty)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(newReply, { newReply = it }, label = { Text("Nueva respuesta") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { if (newReply.isNotBlank()) { persist(replies + newReply.trim()); newReply = "" } }) { Text("Añadir") }
+            },
+            dismissButton = { TextButton(onClick = { manage = false }) { Text(state.strings.cancel) } },
+        )
+    }
+}
+
 @Composable
 fun MessagesScreen(state: AppState) {
+    // Mensajes in the Google Messages (MD3E) layout: conversations grouped
+    // by address inside ONE rounded container with larger avatars, a
+    // "Start chat" FAB, thread view with bubbles in their own container and
+    // a pill composer. The original's features stay: Smart SMS queue with
+    // send-on-coverage, antifraud warnings (banner in-thread + icon in the
+    // list), block sender, SMSC entry, and the segment/cost counter under
+    // the composer (the original has it; Google doesn't).
     val s = state.strings
     var inbox by remember { mutableStateOf<List<SmsInfo>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
-    var to by remember { mutableStateOf("") }
-    var text by remember { mutableStateOf("") }
-    var onCoverage by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { inbox = state.bridge.smsInbox(60); loaded = true }
-    LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 20.dp),
-        contentPadding = PaddingValues(bottom = 110.dp),
-    ) {
-        item {
-            Text(s.messages, style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(8.dp))
-            SimSelector(state)
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(to, { to = it }, label = { Text(s.number) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(text, { text = it }, label = { Text(s.messages) }, modifier = Modifier.fillMaxWidth())
+    var contacts by remember { mutableStateOf<List<ContactInfo>>(emptyList()) }
+    var openThread by remember { mutableStateOf<String?>(null) }
+    var showCompose by remember { mutableStateOf(false) }
+    var showAutoReply by remember { mutableStateOf(false) }
+    var schedTick by remember { mutableStateOf(0) }
+    val scheduled = remember(schedTick) { state.store.scheduledSms() }
+    LaunchedEffect(Unit) { inbox = state.bridge.smsInbox(120); contacts = state.bridge.contacts(); loaded = true }
+    fun nameFor(number: String): String {
+        val tail = number.filter { it.isDigit() }.takeLast(8)
+        return contacts.firstOrNull { it.number.filter { d -> d.isDigit() }.takeLast(8) == tail && tail.isNotEmpty() }?.name ?: number
+    }
+    val conversations = remember(inbox) {
+        inbox.groupBy { it.address }.map { (addr, msgs) -> addr to msgs.maxByOrNull { it.date }!! }
+            .sortedByDescending { it.second.date }
+    }
+    val queued = remember { state.store.queuedSms() }
+
+    if (openThread != null) {
+        val addr = openThread!!
+        val thread = inbox.filter { it.address == addr }.sortedBy { it.date }
+        var draft by remember(addr) { mutableStateOf("") }
+        var queueMode by remember(addr) { mutableStateOf(false) }
+        val suspicious = thread.any { Antifraud.looksSuspicious(it.address, it.body, OfficialSenders) }
+        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(onCoverage, { onCoverage = it }); Text(s.sendOnCoverage)
-            }
-            Button(onClick = {
-                if (onCoverage) {
-                    state.store.queueSms(to, text, state.slot, true)
-                    state.bridge.setCoverageMonitor(true, state.store.get("cov_alarm") == "1")
-                } else {
-                    state.bridge.sendSms(to, text, state.slot)
-                    state.store.addHistory("sms", to, text, state.slot)
+                IconButton(onClick = { openThread = null }) { Icon(MaterialSymbols.Outlined.Arrow_back, contentDescription = "Atrás") }
+                ContactAvatar(ContactInfo(nameFor(addr), addr, null), 40)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(nameFor(addr), style = MaterialTheme.typography.titleMedium)
+                    Text(addr, style = MaterialTheme.typography.bodySmall)
                 }
-                text = ""
-            }, enabled = to.isNotBlank() && text.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                Icon(MaterialSymbols.Outlined.Send, null); Spacer(Modifier.width(8.dp)); Text(s.send)
+                IconButton(onClick = { state.store.setBlocked(addr, true) }) { Icon(MaterialSymbols.Outlined.Block, contentDescription = "Bloquear") }
             }
-            val queued = remember { state.store.queuedSms() }
-            if (queued.isNotEmpty()) {
-                SectionTitle("En cola (${queued.size})")
-                queued.forEach { (n, body, cov) ->
-                    ListItem(headlineContent = { Text(n) }, supportingContent = { Text(body, maxLines = 1) },
-                        leadingContent = { Icon(MaterialSymbols.Outlined.Schedule, null) })
-                }
-            }
-            SectionTitle(s.history)
-            if (loaded && inbox.isEmpty()) Text(s.noPermission)
-        }
-        items(inbox) { sms ->
-            val suspicious = remember(sms) { Antifraud.looksSuspicious(sms.address, sms.body, OfficialSenders) }
-            ListItem(
-                headlineContent = { Text(sms.address) },
-                supportingContent = { Text(sms.body, maxLines = 3) },
-                leadingContent = {
-                    Icon(
-                        if (suspicious) MaterialSymbols.Outlined.Warning else MaterialSymbols.Outlined.Sms, null,
-                        tint = if (suspicious) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                    )
-                },
-                trailingContent = {
-                    IconButton(onClick = { state.store.setBlocked(sms.address, true) }) {
-                        Icon(MaterialSymbols.Outlined.Block, null)
+            if (suspicious) {
+                Card(
+                    Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                ) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(MaterialSymbols.Outlined.Warning, null, tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Posible fraude: este remitente podría estar suplantando a un servicio oficial.", style = MaterialTheme.typography.bodySmall)
                     }
-                },
-            )
-            HorizontalDivider()
+                }
+            }
+            LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(vertical = 8.dp)) {
+                items(thread) { m ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                        horizontalArrangement = if (m.incoming) Arrangement.Start else Arrangement.End,
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = if (m.incoming) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.widthIn(max = 280.dp),
+                        ) { Text(m.body, Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = MaterialTheme.typography.bodyMedium) }
+                    }
+                }
+            }
+            QuickRepliesRow(state) { r -> draft = if (draft.isBlank()) r else draft + " " + r }
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FilterChip(selected = queueMode, onClick = { queueMode = !queueMode },
+                    label = { Text("Al volver cobertura") },
+                    leadingIcon = { Icon(MaterialSymbols.Outlined.Schedule, null) })
+            }
+            Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.Bottom) {
+                OutlinedTextField(
+                    draft, { draft = it },
+                    placeholder = { Text("Mensaje SMS") },
+                    shape = RoundedCornerShape(28.dp),
+                    modifier = Modifier.weight(1f),
+                    maxLines = 4,
+                )
+                Spacer(Modifier.width(8.dp))
+                FloatingActionButton(onClick = {
+                    if (draft.isNotBlank()) {
+                        if (queueMode) {
+                            state.store.queueSms(addr, draft, state.slot, true)
+                            state.bridge.setCoverageMonitor(true, state.store.get("cov_alarm") == "1")
+                        } else {
+                            state.bridge.sendSms(addr, draft, state.slot)
+                            state.store.addHistory("sms", addr, draft, state.slot)
+                        }
+                        draft = ""
+                    }
+                }) { Icon(MaterialSymbols.Outlined.Send, contentDescription = s.send) }
+            }
+            if (draft.isNotEmpty()) {
+                val segs = smsSegments(draft)
+                val intl = addr.startsWith("+") && !addr.startsWith("+53")
+                Text(
+                    buildString {
+                        append("$segs segmento(s) · ${draft.length} caracteres")
+                        if (intl) append(" · ~${segs * 15} CUP (internacional)")
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(bottom = 100.dp),
+                )
+            } else {
+                Spacer(Modifier.height(100.dp))
+            }
+        }
+        return
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = 20.dp),
+            contentPadding = PaddingValues(bottom = 120.dp),
+        ) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(s.messages, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { showAutoReply = true }) { Icon(MaterialSymbols.Outlined.Reply, contentDescription = "Respuesta automática") }
+                    IconButton(onClick = { state.screen = "smsc" }) { Icon(MaterialSymbols.Outlined.Settings_phone, contentDescription = "SMSC") }
+                }
+                SimSelector(state)
+                Spacer(Modifier.height(10.dp))
+            }
+            if (queued.isNotEmpty()) {
+                item {
+                    SectionTitle("En cola (${queued.size})")
+                    queued.forEach { (n, body, _) ->
+                        ListItem(headlineContent = { Text(nameFor(n)) }, supportingContent = { Text(body, maxLines = 1) },
+                            leadingContent = { Icon(MaterialSymbols.Outlined.Schedule, null) })
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+            if (scheduled.isNotEmpty()) {
+                item {
+                    SectionTitle("Programados (${scheduled.size})")
+                    scheduled.forEach { sc ->
+                        ListItem(headlineContent = { Text(nameFor(sc.number)) },
+                            supportingContent = { Text(sc.body, maxLines = 1) },
+                            leadingContent = { Icon(MaterialSymbols.Outlined.Schedule_send, null) },
+                            trailingContent = {
+                                IconButton(onClick = { state.store.cancelScheduledSms(sc.id); schedTick++ }) {
+                                    Icon(MaterialSymbols.Outlined.Delete, null)
+                                }
+                            })
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+            if (loaded && conversations.isEmpty()) {
+                item { Text(s.noPermission) }
+            } else if (conversations.isNotEmpty()) {
+                item {
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                        shape = RoundedCornerShape(24.dp),
+                    ) {
+                        Column {
+                            conversations.forEachIndexed { idx, (addr, last) ->
+                                val susp = Antifraud.looksSuspicious(addr, last.body, OfficialSenders)
+                                ListItem(
+                                    headlineContent = { Text(nameFor(addr)) },
+                                    supportingContent = { Text(last.body, maxLines = 2) },
+                                    leadingContent = { ContactAvatar(ContactInfo(nameFor(addr), addr, null), 48) },
+                                    trailingContent = if (susp) {
+                                        { Icon(MaterialSymbols.Outlined.Warning, null, tint = MaterialTheme.colorScheme.error) }
+                                    } else null,
+                                    colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                                    modifier = Modifier.clickable { openThread = addr },
+                                )
+                                if (idx < conversations.lastIndex) HorizontalDivider(Modifier.padding(start = 72.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        ExtendedFloatingActionButton(
+            onClick = { showCompose = true },
+            icon = { Icon(MaterialSymbols.Outlined.Edit, null) },
+            text = { Text("Iniciar chat") },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 118.dp),
+        )
+    }
+    if (showCompose) {
+        var to by remember { mutableStateOf("") }
+        var text by remember { mutableStateOf("") }
+        var onCoverage by remember { mutableStateOf(false) }
+        var schedOffset by remember { mutableStateOf(0L) }
+        ModalBottomSheet(onDismissRequest = { showCompose = false }) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
+                Text("Nuevo mensaje", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(to, { to = it }, label = { Text(s.number) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(text, { text = it }, label = { Text(s.messages) }, modifier = Modifier.fillMaxWidth(), maxLines = 4)
+                if (text.isNotEmpty()) {
+                    val segs = smsSegments(text)
+                    val intl = to.startsWith("+") && !to.startsWith("+53")
+                    Text(
+                        buildString {
+                            append("$segs segmento(s) · ${text.length} caracteres")
+                            if (intl) append(" · ~${segs * 15} CUP (internacional)")
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+                QuickRepliesRow(state) { r -> text = if (text.isBlank()) r else text + " " + r }
+                Spacer(Modifier.height(4.dp))
+                Text("Programar envío", style = MaterialTheme.typography.labelLarge)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val opts = listOf(0L to "Ahora", 3600000L to "En 1 h", 10800000L to "En 3 h", 21600000L to "En 6 h", 43200000L to "En 12 h", 86400000L to "En 24 h")
+                    items(opts.size) { i ->
+                        FilterChip(selected = schedOffset == opts[i].first, onClick = { schedOffset = opts[i].first }, label = { Text(opts[i].second) })
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(onCoverage, { onCoverage = it }); Text(s.sendOnCoverage)
+                }
+                Button(onClick = {
+                    if (schedOffset > 0) {
+                        state.store.scheduleSms(to, text, state.slot, nowMillis() + schedOffset)
+                        schedTick++
+                    } else if (onCoverage) {
+                        state.store.queueSms(to, text, state.slot, true)
+                        state.bridge.setCoverageMonitor(true, state.store.get("cov_alarm") == "1")
+                    } else {
+                        state.bridge.sendSms(to, text, state.slot)
+                        state.store.addHistory("sms", to, text, state.slot)
+                    }
+                    showCompose = false
+                }, enabled = to.isNotBlank() && text.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                    Icon(if (schedOffset > 0) MaterialSymbols.Outlined.Schedule_send else MaterialSymbols.Outlined.Send, null)
+                    Spacer(Modifier.width(8.dp)); Text(if (schedOffset > 0) "Programar" else s.send)
+                }
+                Spacer(Modifier.height(16.dp))
+            }
         }
     }
+    if (showAutoReply) {
+        var arOn by remember { mutableStateOf(state.store.get("autoreply_on") == "1") }
+        var arKeyword by remember { mutableStateOf(state.store.get("autoreply_keyword") ?: "") }
+        var arText by remember { mutableStateOf(state.store.get("autoreply_text") ?: "") }
+        ModalBottomSheet(onDismissRequest = { showAutoReply = false }) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
+                Text("Respuesta automática", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(8.dp))
+                Text("Si un mensaje contiene tu palabra clave, la app responde sola con tu texto. Nunca responde a remitentes bloqueados ni a números de servicio.", style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Activada", modifier = Modifier.weight(1f))
+                    Switch(checked = arOn, onCheckedChange = { arOn = it; state.store.put("autoreply_on", if (it) "1" else "0") })
+                }
+                OutlinedTextField(arKeyword, { arKeyword = it; state.store.put("autoreply_keyword", it) }, label = { Text("Palabra clave") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(arText, { arText = it; state.store.put("autoreply_text", it) }, label = { Text("Respuesta") }, modifier = Modifier.fillMaxWidth(), maxLines = 3)
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+}
+
+/** SMS segmentation (the original's counter): GSM-7 packs 160 chars in one
+ *  segment, 153 when concatenated; any non-Latin char forces UCS-2 at
+ *  70 / 67. International SMS cost 15 CUP per segment in the original. */
+fun smsSegments(text: String): Int {
+    val unicode = text.any { it.code > 127 }
+    val single = if (unicode) 70 else 160
+    val concat = if (unicode) 67 else 153
+    return if (text.length <= single) 1 else (text.length + concat - 1) / concat
 }
 
 // ───────────────────────── Calls ─────────────────────────
 
 @Composable
 fun CallsScreen(state: AppState) {
+    // Llamadas in the Google Phone (MD3E) layout: favorites strip on top,
+    // filter chips (Google's call categorisation), recents inside one
+    // rounded container, dialer FAB opening a full keypad sheet. All the
+    // original's features stay: blocker entry, Llamar con 99, llamada
+    // privada (both on the keypad sheet), Plan Amigos as the favorites.
     val s = state.strings
     var log by remember { mutableStateOf<List<CallInfo>>(emptyList()) }
-    LaunchedEffect(Unit) { log = state.bridge.callLog(60) }
-    LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 20.dp),
-        contentPadding = PaddingValues(bottom = 110.dp),
-    ) {
-        item {
-            Text(s.calls, style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(8.dp))
-            Row {
-                Button(onClick = { state.screen = "call" }, Modifier.weight(1f)) {
-                    Icon(MaterialSymbols.Outlined.Dialpad, null); Spacer(Modifier.width(6.dp)); Text("Llamar")
-                }
-                Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick = { state.screen = "callblocker" }, Modifier.weight(1f)) {
-                    Icon(MaterialSymbols.Outlined.Block, null); Spacer(Modifier.width(6.dp)); Text("Bloqueador")
+    var friends by remember { mutableStateOf<List<ContactInfo>>(emptyList()) }
+    var filter by remember { mutableStateOf(0) } // 0 todas, 1 perdidas, 2 contactos, 3 bloqueadas
+    var keypadOpen by remember { mutableStateOf(false) }
+    var dialed by remember { mutableStateOf("") }
+    var birthdays by remember { mutableStateOf<List<BirthdayInfo>>(emptyList()) }
+    var toolsOpen by remember { mutableStateOf(false) }
+    var remindTarget by remember { mutableStateOf<CallInfo?>(null) }
+    val blocked = remember { state.store.blockedNumbers() }
+    LaunchedEffect(Unit) {
+        log = state.bridge.callLog(80); friends = state.store.friends()
+        birthdays = state.bridge.contactBirthdays(30)
+    }
+    val shown = log.filter { c ->
+        when (filter) {
+            1 -> c.incoming && c.durationSec == 0L
+            2 -> c.name != null
+            3 -> blocked.any { it.isNotBlank() && (c.number == it || c.number.endsWith(it.takeLast(8))) }
+            else -> true
+        }
+    }
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = 20.dp),
+            contentPadding = PaddingValues(bottom = 120.dp),
+        ) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(s.calls, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { toolsOpen = true }) {
+                        Icon(MaterialSymbols.Outlined.Timer, contentDescription = "Temporizador y respuestas")
+                    }
+                    IconButton(onClick = { state.screen = "callblocker" }) {
+                        Icon(MaterialSymbols.Outlined.Block, contentDescription = "Bloqueador")
+                    }
                 }
             }
-            SectionTitle(s.history)
-            if (log.isEmpty()) Text(s.noPermission)
+            if (friends.isNotEmpty()) {
+                item {
+                    SectionTitle("Favoritos")
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        items(friends) { f ->
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.clickable { state.bridge.call(f.number) },
+                            ) {
+                                ContactAvatar(f, 56)
+                                Spacer(Modifier.height(4.dp))
+                                Text(f.name.substringBefore(" "), style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+            }
+            if (birthdays.isNotEmpty()) {
+                item {
+                    SectionTitle("Cumpleaños")
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        birthdays.forEach { b ->
+                            ListItem(
+                                headlineContent = { Text(b.name) },
+                                supportingContent = {
+                                    Text(if (b.daysUntil == 0) "¡Hoy! · " + b.label else "En ${b.daysUntil} día(s) · " + b.label)
+                                },
+                                leadingContent = { Icon(MaterialSymbols.Outlined.Cake, null, tint = MaterialTheme.colorScheme.primary) },
+                                trailingContent = {
+                                    if (b.number.isNotBlank()) IconButton(onClick = { state.bridge.call(b.number) }) {
+                                        Icon(MaterialSymbols.Outlined.Call, null)
+                                    }
+                                },
+                                colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+            }
+            item {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val labels = listOf("Todas", "Perdidas", "Contactos", "Bloqueadas")
+                    items(labels.size) { i ->
+                        FilterChip(selected = filter == i, onClick = { filter = i }, label = { Text(labels[i]) })
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+            if (shown.isEmpty()) {
+                item { Text(if (log.isEmpty()) s.noPermission else s.empty) }
+            } else {
+                item {
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                        shape = RoundedCornerShape(24.dp),
+                    ) {
+                        Column {
+                            shown.forEachIndexed { idx, c ->
+                                val missed = c.incoming && c.durationSec == 0L
+                                ListItem(
+                                    modifier = Modifier.combinedClickable(
+                                        onClick = {},
+                                        onLongClick = { remindTarget = c },
+                                    ),
+                                    headlineContent = { Text(c.name ?: c.number) },
+                                    supportingContent = {
+                                        Text(buildString {
+                                            append(if (missed) "Perdida" else if (c.incoming) "Entrante" else "Saliente")
+                                            append(" · " + c.number)
+                                            if (c.durationSec > 0) append(" · " + c.durationSec + "s")
+                                        })
+                                    },
+                                    leadingContent = {
+                                        Icon(
+                                            when {
+                                                missed -> MaterialSymbols.Outlined.Call_missed
+                                                c.incoming -> MaterialSymbols.Outlined.Call_received
+                                                else -> MaterialSymbols.Outlined.Call_made
+                                            },
+                                            null,
+                                            tint = if (missed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                        )
+                                    },
+                                    trailingContent = {
+                                        IconButton(onClick = { state.bridge.call(c.number) }) { Icon(MaterialSymbols.Outlined.Call, null) }
+                                    },
+                                    colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                                )
+                                if (idx < shown.lastIndex) HorizontalDivider(Modifier.padding(start = 56.dp))
+                            }
+                        }
+                    }
+                }
+            }
         }
-        items(log) { c ->
-            val contact = ContactInfo(c.name ?: c.number, c.number, null)
-            ListItem(
-                headlineContent = { Text(c.name ?: c.number) },
-                supportingContent = { Text("${c.number} · ${c.durationSec}s") },
-                leadingContent = { ContactAvatar(contact) },
-                trailingContent = {
-                    IconButton(onClick = { state.bridge.call(c.number) }) { Icon(MaterialSymbols.Outlined.Call, null) }
-                },
-            )
-            HorizontalDivider()
+        FloatingActionButton(
+            onClick = { keypadOpen = true },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 118.dp),
+        ) { Icon(MaterialSymbols.Outlined.Dialpad, contentDescription = "Teclado") }
+    }
+    if (keypadOpen) {
+        ModalBottomSheet(onDismissRequest = { keypadOpen = false }) {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(if (dialed.isEmpty()) " " else dialed, style = MaterialTheme.typography.headlineMedium)
+                Spacer(Modifier.height(8.dp))
+                val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#")
+                for (r in 0 until 4) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        for (col in 0 until 3) {
+                            val k = keys[r * 3 + col]
+                            TextButton(onClick = { dialed += k }, modifier = Modifier.size(72.dp)) {
+                                Text(k, style = MaterialTheme.typography.headlineSmall)
+                            }
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { if (dialed.isNotEmpty()) dialed = dialed.dropLast(1) }) {
+                        Icon(MaterialSymbols.Outlined.Backspace, contentDescription = "Borrar")
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    FloatingActionButton(onClick = { if (dialed.isNotBlank()) { state.bridge.call(dialed); keypadOpen = false } }) {
+                        Icon(MaterialSymbols.Outlined.Call, contentDescription = s.dial)
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Spacer(Modifier.size(48.dp))
+                }
+                Spacer(Modifier.height(6.dp))
+                Row {
+                    TextButton(onClick = { if (dialed.isNotBlank()) { state.bridge.call("*99" + dialed); keypadOpen = false } }) { Text("Llamar con 99") }
+                    TextButton(onClick = { if (dialed.isNotBlank()) { state.bridge.call("#31#" + dialed); keypadOpen = false } }) { Text("Llamada privada") }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
         }
+    }
+    if (toolsOpen) {
+        var cutMin by remember { mutableStateOf(state.store.get("cut_timer_min") ?: "0") }
+        var respondText by remember { mutableStateOf(state.store.get("respond_via_text") ?: "Te llamo enseguida") }
+        ModalBottomSheet(onDismissRequest = { toolsOpen = false }) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
+                Text("Durante la llamada", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(6.dp))
+                Text("La pantalla de llamada, el corte por temporizador y responder con un mensaje " +
+                    "se activan cuando ETECSA Toolkit es la app de teléfono predeterminada.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { state.bridge.openDefaultDialerSettings() }, modifier = Modifier.fillMaxWidth()) {
+                    Text("App de teléfono predeterminada")
+                }
+                Spacer(Modifier.height(14.dp))
+                Text("Corte automático de llamada", style = MaterialTheme.typography.titleSmall)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(listOf(0, 1, 2, 5, 10, 15)) { m ->
+                        FilterChip(
+                            selected = cutMin == m.toString(),
+                            onClick = { cutMin = m.toString(); state.store.put("cut_timer_min", m.toString()) },
+                            label = { Text(if (m == 0) "Apagado" else "$m min") },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(respondText, {
+                    respondText = it; state.store.put("respond_via_text", it)
+                }, label = { Text("Responder con un mensaje") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+    remindTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { remindTarget = null },
+            title = { Text("Recordarme: " + (target.name ?: target.number)) },
+            text = {
+                Column {
+                    listOf(30 to "30 minutos", 60 to "1 hora", 120 to "2 horas").forEach { (mins, label) ->
+                        TextButton(onClick = {
+                            state.bridge.scheduleReminder("Llamar de nuevo",
+                                target.name ?: target.number, nowMillis() + mins * 60000L)
+                            remindTarget = null
+                        }) { Text(label) }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { remindTarget = null }) { Text(s.cancel) } },
+        )
     }
 }
 
@@ -747,7 +1557,7 @@ fun NetworkScreen(state: AppState) {
         contentPadding = PaddingValues(bottom = 110.dp),
     ) {
         item {
-            Text(s.network, style = MaterialTheme.typography.headlineSmall)
+            Text(s.network, style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.height(8.dp))
             SimSelector(state)
             SectionTitle(s.coverageMonitor)
@@ -768,6 +1578,34 @@ fun NetworkScreen(state: AppState) {
             SectionTitle("Tráfico")
             Text(traffic.ifBlank { "—" }, style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(12.dp))
+            var overlay by remember { mutableStateOf(false) }
+            ListItem(headlineContent = { Text("Monitor flotante de velocidad") },
+                supportingContent = { Text("Velocidad en vivo sobre cualquier app") },
+                trailingContent = {
+                    Switch(checked = overlay, onCheckedChange = { on ->
+                        if (on && !state.bridge.canDrawOverlays()) {
+                            state.bridge.openOverlaySettings()
+                        } else {
+                            overlay = on; state.bridge.setTrafficOverlay(on)
+                        }
+                    })
+                })
+            SectionTitle("Actualización automática")
+            Text("Consulta el saldo sola cada cierto tiempo y avisa antes de que venza.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(6.dp))
+            var autoSync by remember { mutableStateOf(state.store.get("autosync_hours") ?: "0") }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(listOf(0, 6, 12, 24)) { h ->
+                    FilterChip(
+                        selected = autoSync == h.toString(),
+                        onClick = { autoSync = h.toString(); state.bridge.setAutoSync(h) },
+                        label = { Text(if (h == 0) "Apagado" else "Cada $h h") },
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
             Row {
                 Button(onClick = { state.screen = "speed" }, Modifier.weight(1f)) { Text(s.speedTest) }
                 Spacer(Modifier.width(8.dp))
@@ -777,6 +1615,7 @@ fun NetworkScreen(state: AppState) {
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SpeedScreen(state: AppState) {
     val s = state.strings
@@ -785,7 +1624,7 @@ fun SpeedScreen(state: AppState) {
     ScreenScaffold(state, s.speedTest) {
         Text("Servidor: Cloudflare (speed.cloudflare.com), igual que el original. La prueba consume datos reales.")
         Spacer(Modifier.height(16.dp))
-        if (running) { CircularProgressIndicator(); Spacer(Modifier.height(12.dp)) }
+        if (running) { LoadingIndicator(); Spacer(Modifier.height(12.dp)) }
         result?.let { r ->
             ListItem(headlineContent = { Text("${s.download}: ${r.downloadMbps.fmt(2)} Mbps") })
             ListItem(headlineContent = { Text("${s.upload}: ${r.uploadMbps.fmt(2)} Mbps") })

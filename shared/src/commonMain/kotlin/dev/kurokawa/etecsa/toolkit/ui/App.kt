@@ -5,6 +5,9 @@ import com.composables.icons.materialsymbols.outlined.*
 import com.composables.icons.materialsymbols.outlinedfilled.*
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,13 +17,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material3.FloatingToolbarDefaults
+import androidx.compose.material3.HorizontalFloatingToolbar
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -51,12 +56,28 @@ class AppState(
             ussdBusy = false; ussdResult = reply
             store.addHistory("ussd", title, reply, slot)
             val parsed = ResponseParser.parse(reply)
-            if (parsed.kind == ParsedResponse.Kind.BALANCE) balance = parsed
+            if (parsed.kind == ParsedResponse.Kind.BALANCE) {
+                balance = parsed
+                store.put("last_consult_ms", nowMillis().toString())
+            }
+            // Feed the home-screen widgets (multi-line widget reads these)
+            parsed.balanceCup?.let { store.put("widget_saldo", "$it CUP") }
+            parsed.dataBytes?.let { store.put("widget_datos", ResponseParser.formatData(it)) }
+            parsed.voiceMinutes?.let { store.put("widget_voz", "$it min") }
+            parsed.smsCount?.let { store.put("widget_sms", "$it SMS") }
+            // Plan/balance expiry reminder: arm a day-before notification
+            parsed.expires?.let { exp ->
+                ResponseParser.expiryReminderMillis(exp, nowMillis())?.let { at ->
+                    bridge.scheduleReminder("Vencimiento cercano",
+                        "Tu saldo o plan vence el $exp", at)
+                }
+            }
         }
     }
     fun back() { screen = "home" }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ToolkitApp() {
     val bridge = remember { createBridge() }
@@ -101,7 +122,7 @@ fun ToolkitApp() {
         }
         if (state.ussdBusy) {
             AlertDialog(onDismissRequest = {}, title = { Text(state.strings.consulting) },
-                text = { Row { CircularProgressIndicator(); Spacer(Modifier.width(16.dp)); Text(state.ussdResult ?: "") } },
+                text = { Row(verticalAlignment = Alignment.CenterVertically) { LoadingIndicator(); Spacer(Modifier.width(16.dp)); Text(state.ussdResult ?: "") } },
                 confirmButton = {})
         }
     }
@@ -118,7 +139,7 @@ private fun Splash(onDone: () -> Unit) {
     }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            AppMark(Modifier.scale(scale.value).size(110.dp), big = true)
+            EtkMark(Modifier.scale(scale.value).size(110.dp), big = true)
             Spacer(Modifier.height(20.dp))
             Text("ETECSA Toolkit", style = MaterialTheme.typography.headlineMedium)
             Text("Material 3 Expressive", style = MaterialTheme.typography.bodyMedium,
@@ -127,169 +148,144 @@ private fun Splash(onDone: () -> Unit) {
     }
 }
 
-/** The new app mark: ETECSA-blue → teal gradient tile with signal arcs.
- *  Used as splash, top-bar logo and (in vector form) the launcher icon. */
-@Composable
-fun AppMark(modifier: Modifier = Modifier, big: Boolean = false) {
-    Box(
-        modifier.clip(RoundedCornerShape(if (big) 30.dp else 14.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF0057A8), Color(0xFF00A99D)))),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(MaterialSymbols.Outlined.Signal_cellular_alt, contentDescription = null,
-            tint = Color.White, modifier = Modifier.fillMaxSize(0.62f))
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun MainShell(state: AppState, dark: Boolean, onDark: (Boolean) -> Unit) {
     val s = state.strings
-    var query by remember { mutableStateOf("") }
-    var searchOpen by remember { mutableStateOf(false) }
+    // The original's bottom navigation (RoCla MainActivity, tag
+    // rocla_bottom_navigation_static_rc6): Inicio · Llamadas · Mensajes ·
+    // Planes. Sub-screens highlight the tab they belong to; everything
+    // reached from the Home service list stays on Inicio.
     val tab = when (state.screen) {
-        "messages" -> 1; "calls" -> 2; "network", "speed", "firewall", "forcelte" -> 3; else -> 0
+        "calls", "call", "callblocker" -> 1
+        "messages", "smsc" -> 2
+        "plans" -> 3
+        else -> 0
     }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            // ── Top bar: the MD3E SearchBar housing logo + wordmark + avatar ──
-            SearchBar(
-                inputField = {
-                    SearchBarDefaults.InputField(
-                        query = query, onQueryChange = { query = it },
-                        onSearch = { searchOpen = false }, expanded = searchOpen,
-                        onExpandedChange = { searchOpen = it },
-                        placeholder = { Text(s.searchHint) },
-                        leadingIcon = { AppMark(Modifier.size(36.dp)) },
-                        trailingIcon = {
-                            // Account avatar with circle container → Settings
-                            Box(
-                                Modifier.size(38.dp).clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer)
-                                    .clickable { state.screen = "settings" },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(MaterialSymbols.Outlined.Person, contentDescription = s.settings,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                            }
-                        },
-                    )
-                },
-                expanded = searchOpen, onExpandedChange = { searchOpen = it },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            ) {
-                // Global search: services, plans, screens — everything indexed
-                val hits = remember(query) {
-                    if (query.isBlank()) emptyList()
-                    else Services.filter {
-                        it.titleEs.contains(query, true) || it.descEs.contains(query, true) || it.action.contains(query)
-                    } + Plans.filter { it.title.contains(query, true) || it.code.contains(query) }
-                        .map { ServiceItem("plan_" + it.id, Category.PLANS, it.title, it.detail + " · " + it.price, it.code) }
-                }
-                LazyColumn {
-                    items(hits) { item ->
-                        ListItem(
-                            headlineContent = { Text(item.titleEs) },
-                            supportingContent = { Text(item.descEs) },
-                            leadingContent = { Icon(MaterialSymbols.Outlined.Search, null) },
-                            modifier = Modifier.clickable {
-                                searchOpen = false; query = ""
-                                if (item.action.startsWith("screen:")) state.screen = item.action.removePrefix("screen:")
-                                else state.runUssd(item.action, item.titleEs)
-                            },
-                        )
-                    }
-                }
-            }
-            if (!searchOpen) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(s.appName, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { state.screen = "history" }) {
-                        Icon(MaterialSymbols.Outlined.History, contentDescription = s.history)
-                    }
-                }
-                Box(Modifier.weight(1f)) {
-                    when (state.screen) {
-                        "home" -> HomeScreen(state)
-                        "messages" -> MessagesScreen(state)
-                        "calls" -> CallsScreen(state)
-                        "network" -> NetworkScreen(state)
-                        "settings" -> SettingsScreen(state, dark, onDark)
-                        "history" -> HistoryScreen(state)
-                        "plans" -> PlansScreen(state)
-                        "transfer" -> TransferScreen(state)
-                        "friends" -> FriendsScreen(state)
-                        "advance" -> AdvanceScreen(state)
-                        "cards" -> CardsScreen(state)
-                        "smsc" -> SmscScreen(state)
-                        "call" -> CallScreen(state)
-                        "callblocker" -> CallBlockerScreen(state)
-                        "nauta" -> NautaScreen(state)
-                        "nautamail" -> NautaMailScreen(state)
-                        "online" -> OnlineScreen(state)
-                        "useful" -> UsefulScreen(state)
-                        "speed" -> SpeedScreen(state)
-                        "firewall" -> FirewallScreen(state)
-                        "forcelte" -> ForceLteScreen(state)
-                        "antifraud" -> AntifraudScreen(state)
-                        "backup" -> BackupScreen(state)
-                        else -> HomeScreen(state)
-                    }
+            // v1.2 shell: NO global header. Each tab is its own page, like
+            // the original's activities — Home carries its own top row,
+            // Calls/Messages their own, feature screens their title bar.
+            Box(Modifier.weight(1f)) {
+                when (state.screen) {
+                    "home" -> HomeScreen(state)
+                    "messages" -> MessagesScreen(state)
+                    "calls" -> CallsScreen(state)
+                    "network" -> NetworkScreen(state)
+                    "settings" -> SettingsScreen(state, dark, onDark)
+                    "history" -> HistoryScreen(state)
+                    "search" -> SearchScreen(state)
+                    "plans" -> PlansScreen(state)
+                    "transfer" -> TransferScreen(state)
+                    "friends" -> FriendsScreen(state)
+                    "advance" -> AdvanceScreen(state)
+                    "cards" -> CardsScreen(state)
+                    "smsc" -> SmscScreen(state)
+                    "call" -> CallScreen(state)
+                    "callblocker" -> CallBlockerScreen(state)
+                    "nauta" -> NautaScreen(state)
+                    "nautamail" -> NautaMailScreen(state)
+                    "online" -> OnlineScreen(state)
+                    "useful" -> UsefulScreen(state)
+                    "speed" -> SpeedScreen(state)
+                    "firewall" -> FirewallScreen(state)
+                    "forcelte" -> ForceLteScreen(state)
+                    "antifraud" -> AntifraudScreen(state)
+                    "backup" -> BackupScreen(state)
+                    else -> HomeScreen(state)
                 }
             }
         }
-        // ── Floating native ShortNavigationBar (82.7% width, as mocked) ──
-        // NAV FIX (root cause proven on UDYAT 2026-11-13 by decompile +
-        // instrumented repro): material3 alpha05's ShortNavigationBar
-        // measure policies coerce every item's width UP to the bar's
-        // incoming minWidth, so any fillMaxWidth/width on the BAR itself
-        // inflates items to full bar width and pushes items 2..n off the
-        // bar (UDYAT v1.3.2 rendered only its first tab). The bar must
-        // receive LOOSE constraints: the chrome width lives on this
-        // wrapper Box (a plain Box does not propagate min constraints),
-        // and the bar only caps itself with widthIn.
-        Column(
-            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp).fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
+        // ── Floating nav: the OFFICIAL MD3 Expressive
+        // HorizontalFloatingToolbar, Google Photos style — the same
+        // improvised navbar LSEx/UDYAT use (Ernest's design). Items are
+        // spring-animated label pills; the selected pill grows to reveal
+        // its filled icon. (The ShortNavigationBar is gone: it rendered
+        // flat and generic, and its alpha05 measure policies fought the
+        // bar width — see AGENTS.md.)
+        Box(
+            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp),
+            contentAlignment = Alignment.Center,
         ) {
-          Box(Modifier.fillMaxWidth(0.827f), contentAlignment = Alignment.Center) {
-            ShortNavigationBar(
-                modifier = Modifier.widthIn(max = 552.dp)
-                    .shadow(8.dp, RoundedCornerShape(36.dp)).clip(RoundedCornerShape(36.dp)),
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                windowInsets = WindowInsets(0, 0, 0, 0),
-                arrangement = ShortNavigationBarArrangement.EqualWeight,
-            ) {
-                ShortNavigationBarItem(
-                    selected = tab == 0, onClick = { state.screen = "home" },
-                    icon = { Icon(if (tab == 0) MaterialSymbols.OutlinedFilled.Home else MaterialSymbols.Outlined.Home, contentDescription = null) },
-                    label = { Text(s.home) })
-                ShortNavigationBarItem(
-                    selected = tab == 1, onClick = { state.screen = "messages" },
-                    icon = { Icon(if (tab == 1) MaterialSymbols.OutlinedFilled.Sms else MaterialSymbols.Outlined.Sms, contentDescription = null) },
-                    label = { Text(s.messages) })
-                ShortNavigationBarItem(
-                    selected = tab == 2, onClick = { state.screen = "calls" },
-                    icon = { Icon(if (tab == 2) MaterialSymbols.OutlinedFilled.Call else MaterialSymbols.Outlined.Call, contentDescription = null) },
-                    label = { Text(s.calls) })
-                ShortNavigationBarItem(
-                    selected = tab == 3, onClick = { state.screen = "network" },
-                    icon = { Icon(if (tab == 3) MaterialSymbols.OutlinedFilled.Cell_tower else MaterialSymbols.Outlined.Cell_tower, contentDescription = null) },
-                    label = { Text(s.network) })
+            EtkFloatingNavBar(tab, s.home, s.calls, s.messages, s.plans) { t ->
+                state.screen = when (t) {
+                    0 -> "home"; 1 -> "calls"; 2 -> "messages"; else -> "plans"
+                }
             }
-          }
         }
+
     }
 }
 
 
+/** The improvised navbar (LSEx/UDYAT pattern, Ernest's design):
+ *  the OFFICIAL MD3 Expressive HorizontalFloatingToolbar, Google
+ *  Photos style. The 4dp end spacers keep the selected pill's
+ *  breathing room at the bar's ends equal to its y-axis gaps. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun EtkFloatingNavBar(
+    tab: Int, home: String, calls: String, messages: String, plans: String,
+    onSelect: (Int) -> Unit,
+) {
+    HorizontalFloatingToolbar(
+        expanded = true,
+        colors = FloatingToolbarDefaults.standardFloatingToolbarColors(),
+    ) {
+        Spacer(Modifier.width(4.dp))
+        EtkNavToolbarItem(tab == 0, MaterialSymbols.OutlinedFilled.Home, home) { onSelect(0) }
+        EtkNavToolbarItem(tab == 1, MaterialSymbols.OutlinedFilled.Call, calls) { onSelect(1) }
+        EtkNavToolbarItem(tab == 2, MaterialSymbols.OutlinedFilled.Sms, messages) { onSelect(2) }
+        EtkNavToolbarItem(tab == 3, MaterialSymbols.OutlinedFilled.Shopping_bag, plans) { onSelect(3) }
+        Spacer(Modifier.width(4.dp))
+    }
+}
+
+/** One nav pill: a spring-animated label whose selected state grows
+ *  to reveal its filled icon (LSEx's LsexNavToolbarItem). */
+@Composable
+private fun EtkNavToolbarItem(
+    selected: Boolean, selectedIcon: ImageVector, label: String, onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val fraction by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow),
+        label = "navItemSelectedFraction",
+    )
+    val f = fraction.coerceIn(0f, 1f)
+    Box(
+        Modifier.clip(RoundedCornerShape(50))
+            .background(scheme.secondaryContainer.copy(alpha = f), RoundedCornerShape(50))
+            .clickable(onClick = onClick),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (f >= 0.5f) FontWeight.Medium else FontWeight.Normal,
+            color = androidx.compose.ui.graphics.lerp(scheme.onSurface, scheme.onSecondaryContainer, f),
+            maxLines = 1,
+            modifier = Modifier.padding(
+                start = androidx.compose.ui.unit.lerp(12.dp, 44.dp, f),
+                end = 12.dp, top = 10.dp, bottom = 10.dp,
+            ),
+        )
+        if (f > 0.01f) {
+            Box(Modifier.align(Alignment.CenterStart).padding(start = 16.dp)) {
+                Icon(selectedIcon, contentDescription = null,
+                    tint = scheme.onSecondaryContainer.copy(alpha = f),
+                    modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+}
+
 /** Connected ToggleButton group — the SIM slot selector. ALWAYS shows both
  *  slots, even with a single/undetected SIM (Ernest). Slot-based: choosing a
- *  slot re-targets every query/transfer at that slot. */
+ *  slot re-targets every query/transfer at that slot. This is the OFFICIAL
+ *  MD3E ButtonGroup + ToggleButton — the custom white-pill variant is gone
+ *  (Ernest, 2026-11-17: old-style pills). */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SimSelector(state: AppState) {
@@ -301,21 +297,20 @@ fun SimSelector(state: AppState) {
         Spacer(Modifier.height(6.dp))
         Row(Modifier.fillMaxWidth()) {
             listOf(s.sim1 to 0, s.sim2 to 1).forEachIndexed { i, (label, slot) ->
+                val selected = state.slot == slot
+                val info = sims.firstOrNull { it.slot == slot }
+                val text = if (info?.detected == true) "$label · ${info.carrier}" else "$label · —"
                 val shapes = when (i) {
                     0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
                     else -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                 }
                 ToggleButton(
-                    checked = state.slot == slot,
+                    checked = selected,
                     onCheckedChange = { if (it) { state.slot = slot; state.store.put("sim_slot", slot.toString()) } },
                     shapes = shapes,
                     modifier = Modifier.weight(1f).padding(horizontal = 1.dp),
                 ) {
-                    val info = sims.firstOrNull { it.slot == slot }
-                    Text(
-                        if (info?.detected == true) "$label · ${info.carrier}" else "$label · —",
-                        maxLines = 1, softWrap = false,
-                    )
+                    Text(text, maxLines = 1, softWrap = false)
                 }
             }
         }
@@ -340,7 +335,7 @@ fun ScreenScaffold(state: AppState, title: String, content: @Composable ColumnSc
                 IconButton(onClick = { state.back() }) {
                     Icon(MaterialSymbols.Outlined.Arrow_back, contentDescription = null)
                 }
-                Text(title, style = MaterialTheme.typography.headlineSmall)
+                Text(title, style = MaterialTheme.typography.headlineMedium)
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { state.screen = "history" }) {
                     Icon(MaterialSymbols.Outlined.History, contentDescription = state.strings.history)
