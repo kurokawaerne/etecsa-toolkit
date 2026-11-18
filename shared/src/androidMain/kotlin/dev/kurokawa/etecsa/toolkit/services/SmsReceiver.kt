@@ -31,7 +31,28 @@ class SmsReceiver : BroadcastReceiver() {
                     store.addHistory("antifraud", sender, body, 0)
                     notify(context, sender, body)
                 }
+                maybeAutoReply(context, store, sender, body)
             }
+        } catch (_: Exception) {}
+    }
+
+    /** The original's auto-reply: when enabled and the incoming body contains
+     *  the user's keyword, answer once with their canned text. Settings live
+     *  in plain store keys (autoreply_on / _keyword / _text), set from the
+     *  Messages tab. Never replies to blocked or service senders. */
+    private fun maybeAutoReply(context: Context, store: EtkStore, sender: String, body: String) {
+        try {
+            if (store.get("autoreply_on") != "1") return
+            val keyword = store.get("autoreply_keyword")?.trim().orEmpty()
+            val reply = store.get("autoreply_text")?.trim().orEmpty()
+            if (keyword.isEmpty() || reply.isEmpty()) return
+            if (!body.contains(keyword, ignoreCase = true)) return
+            if (sender.length < 7) return // service/short senders: never auto-reply
+            val mgr = @Suppress("DEPRECATION") android.telephony.SmsManager.getDefault()
+            val parts = mgr.divideMessage(reply)
+            if (parts.size > 1) mgr.sendMultipartTextMessage(sender, null, parts, null, null)
+            else mgr.sendTextMessage(sender, null, reply, null, null)
+            store.addHistory("sms_autoreply", sender, reply, 0)
         } catch (_: Exception) {}
     }
 
