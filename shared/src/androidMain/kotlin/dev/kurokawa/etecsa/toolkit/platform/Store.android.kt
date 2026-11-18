@@ -17,15 +17,18 @@ import javax.crypto.spec.GCMParameterSpec
  *  AndroidKeyStore AES-GCM secrets. The whole local data layer. */
 class EtkStore(private val ctx: Context) : LocalStore {
     private val prefs = ctx.getSharedPreferences("etk_kv", Context.MODE_PRIVATE)
-    private val db = object : SQLiteOpenHelper(ctx, "etk.db", null, 1) {
+    private val db = object : SQLiteOpenHelper(ctx, "etk.db", null, 2) {
         override fun onCreate(db: android.database.sqlite.SQLiteDatabase) {
             db.execSQL("CREATE TABLE history(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, title TEXT, body TEXT, ts INTEGER, slot INTEGER)")
             db.execSQL("CREATE TABLE blocked(number TEXT PRIMARY KEY)")
             db.execSQL("CREATE TABLE friends(number TEXT PRIMARY KEY, name TEXT, photo TEXT)")
             db.execSQL("CREATE TABLE cards(label TEXT PRIMARY KEY, masked TEXT)")
             db.execSQL("CREATE TABLE sms_queue(id INTEGER PRIMARY KEY AUTOINCREMENT, number TEXT, body TEXT, slot INTEGER, on_cov INTEGER)")
+            db.execSQL("CREATE TABLE scheduled_sms(id INTEGER PRIMARY KEY AUTOINCREMENT, number TEXT, body TEXT, slot INTEGER, at INTEGER)")
         }
-        override fun onUpgrade(db: android.database.sqlite.SQLiteDatabase, o: Int, n: Int) {}
+        override fun onUpgrade(db: android.database.sqlite.SQLiteDatabase, o: Int, n: Int) {
+            if (o < 2) db.execSQL("CREATE TABLE IF NOT EXISTS scheduled_sms(id INTEGER PRIMARY KEY AUTOINCREMENT, number TEXT, body TEXT, slot INTEGER, at INTEGER)")
+        }
     }
 
     override fun addHistory(kind: String, title: String, body: String, slot: Int) {
@@ -121,6 +124,45 @@ class EtkStore(private val ctx: Context) : LocalStore {
         }; out
     } catch (_: Exception) { emptyList() }
     override fun clearQueuedSms() { try { db.writableDatabase.delete("sms_queue", null, null) } catch (_: Exception) {} }
+
+    // ── Scheduled SMS: row + exact alarm to ScheduledSmsReceiver ──
+    private fun scheduledIntent(id: Long): android.app.PendingIntent {
+        val intent = android.content.Intent(ctx, dev.kurokawa.etecsa.toolkit.services.ScheduledSmsReceiver::class.java)
+            .putExtra("sched_id", id)
+        return android.app.PendingIntent.getBroadcast(ctx, id.toInt(), intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+    }
+    override fun scheduleSms(number: String, text: String, slot: Int, atMillis: Long): Long = try {
+        val v = ContentValues().apply {
+            put("number", number); put("body", text); put("slot", slot); put("at", atMillis)
+        }
+        val id = db.writableDatabase.insert("scheduled_sms", null, v)
+        if (id > 0) {
+            val am = ctx.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            val pi = scheduledIntent(id)
+            if (android.os.Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
+                am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, atMillis, pi)
+            } else {
+                am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, atMillis, pi)
+            }
+        }
+        id
+    } catch (_: Exception) { -1 }
+    override fun scheduledSms(): List<ScheduledSms> = try {
+        val out = mutableListOf<ScheduledSms>()
+        db.readableDatabase.query("scheduled_sms", arrayOf("id","number","body","slot","at"),
+            null, null, null, null, "at").use { c ->
+            while (c.moveToNext()) out += ScheduledSms(c.getLong(0), c.getString(1) ?: "",
+                c.getString(2) ?: "", c.getInt(3), c.getLong(4))
+        }; out
+    } catch (_: Exception) { emptyList() }
+    override fun cancelScheduledSms(id: Long) {
+        try {
+            val am = ctx.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            am.cancel(scheduledIntent(id))
+            db.writableDatabase.delete("scheduled_sms", "id=?", arrayOf(id.toString()))
+        } catch (_: Exception) {}
+    }
 
     // AndroidKeyStore AES-GCM
     private fun secretKey(aliasName: String): SecretKey {

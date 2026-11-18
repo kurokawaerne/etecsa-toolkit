@@ -38,6 +38,15 @@ class AndroidBridge(private val ctx: Context) : DeviceBridge {
         return if (subId >= 0) base.createForSubscriptionId(subId) else base
     }
 
+    override fun signalLevel(slot: Int): Int = try {
+        val subId = subIdForSlot(slot)
+        if (subId < 0) -1 else {
+            val tm = ctx.getSystemService(TelephonyManager::class.java)
+                .createForSubscriptionId(subId)
+            tm.signalStrength?.level ?: -1
+        }
+    } catch (e: Exception) { -1 }
+
     override fun simSlots(): List<SimInfo> = (0..1).map { slot ->
         try {
             val info = subs?.getActiveSubscriptionInfoForSimSlotIndex(slot)
@@ -266,4 +275,112 @@ class AndroidBridge(private val ctx: Context) : DeviceBridge {
         prefs.getStringSet("fw_blocked", emptySet()) ?: emptySet()
 
     override fun nautaPortal() = openUrl("https://secure.etecsa.net:8443/")
+
+    override fun scheduleReminder(title: String, body: String, atMillis: Long) {
+        try {
+            val intent = Intent(ctx, dev.kurokawa.etecsa.toolkit.services.ReminderReceiver::class.java)
+                .putExtra("title", title).putExtra("body", body)
+            val pi = android.app.PendingIntent.getBroadcast(ctx, (title + body + atMillis).hashCode(), intent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+            val am = ctx.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
+                am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, atMillis, pi)
+            } else {
+                am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, atMillis, pi)
+            }
+        } catch (_: Exception) {}
+    }
+
+    override fun openDefaultDialerSettings() {
+        try {
+            val intent = Intent(android.telecom.TelecomManager.ACTION_CHANGE_DEFAULT_DIALER)
+                .putExtra(android.telecom.TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, ctx.packageName)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ctx.startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                ctx.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (_: Exception) {}
+        }
+    }
+
+    override fun setAutoSync(hours: Int) {
+        prefs.edit().putString("autosync_hours", hours.toString()).apply()
+        dev.kurokawa.etecsa.toolkit.services.armAutoSync(ctx, hours)
+    }
+
+    override fun setTrafficOverlay(on: Boolean) {
+        val intent = Intent(ctx, dev.kurokawa.etecsa.toolkit.services.TrafficOverlayService::class.java)
+        if (on) {
+            try { ctx.startService(intent) } catch (_: Exception) {}
+        } else {
+            try { ctx.stopService(intent) } catch (_: Exception) {}
+        }
+    }
+
+    override fun canDrawOverlays(): Boolean =
+        Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(ctx)
+
+    override fun openOverlaySettings() {
+        try {
+            ctx.startActivity(
+                Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + ctx.packageName))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: Exception) {}
+    }
+
+    /** Birthdays from the contacts' Event rows. START_DATE arrives as
+     *  yyyy-MM-dd, --MM-dd or MM-dd depending on the source account; only
+     *  month/day matter. Arms a 9:00 reminder for each upcoming one. */
+    override fun contactBirthdays(daysAhead: Int): List<BirthdayInfo> = try {
+        val out = mutableListOf<BirthdayInfo>()
+        val today = java.util.Calendar.getInstance()
+        val fmt = java.text.SimpleDateFormat("d MMM", java.util.Locale("es"))
+        val uri = ContactsContract.Data.CONTENT_URI
+        val projection = arrayOf(
+            ContactsContract.Contacts.DISPLAY_NAME,
+            ContactsContract.CommonDataKinds.Event.START_DATE,
+            ContactsContract.CommonDataKinds.Event.CONTACT_ID,
+        )
+        val selection = ContactsContract.Data.MIMETYPE + "=? AND " +
+            ContactsContract.CommonDataKinds.Event.TYPE + "=?"
+        val args = arrayOf(
+            ContactsContract.CommonDataKinds.Event.CONTENT_ITEM_TYPE,
+            ContactsContract.CommonDataKinds.Event.TYPE_BIRTHDAY.toString(),
+        )
+        ctx.contentResolver.query(uri, projection, selection, args, null)?.use { c ->
+            while (c.moveToNext()) {
+                val name = c.getString(0) ?: continue
+                val raw = c.getString(1) ?: continue
+                val contactId = c.getLong(2)
+                val parts = raw.split("-").filter { it.isNotBlank() }
+                if (parts.size < 2) continue
+                val month = parts[parts.size - 2].toIntOrNull() ?: continue
+                val day = parts[parts.size - 1].toIntOrNull() ?: continue
+                val next = java.util.Calendar.getInstance().apply {
+                    set(java.util.Calendar.MONTH, month - 1)
+                    set(java.util.Calendar.DAY_OF_MONTH, day)
+                    set(java.util.Calendar.HOUR_OF_DAY, 9)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                }
+                if (next.timeInMillis < today.timeInMillis) next.add(java.util.Calendar.YEAR, 1)
+                val daysUntil = ((next.timeInMillis - today.timeInMillis) / 86400000L).toInt()
+                if (daysUntil > daysAhead) continue
+                // First phone number for this contact, if any
+                var number = ""
+                ctx.contentResolver.query(
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+                    ContactsContract.CommonDataKinds.Phone.CONTACT_ID + "=?",
+                    arrayOf(contactId.toString()), null,
+                )?.use { pc -> if (pc.moveToFirst()) number = pc.getString(0) ?: "" }
+                out += BirthdayInfo(name, number, daysUntil, fmt.format(next.time))
+                scheduleReminder("Cumpleaños", "Hoy cumple años $name", next.timeInMillis)
+            }
+        }
+        out.sortedBy { it.daysUntil }
+    } catch (_: Exception) { emptyList() }
 }
