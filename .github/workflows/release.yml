@@ -5,7 +5,7 @@ on:
       tag:
         description: "Release tag to create"
         required: true
-        default: "v1.0.0"
+        default: "v1.2.0"
 permissions:
   contents: write
 jobs:
@@ -30,16 +30,20 @@ jobs:
       - name: Build APKs (debug-signed, installable; release keystore plugs in via ETK_* secrets later)
         run: ./gradlew :app:assembleDebug
       - name: Collect assets
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
           mkdir -p release-assets
           python3 - << 'PY'
           import glob, shutil, os
           os.makedirs("release-assets", exist_ok=True)
+          import os as _os
+          version = _os.environ.get("RELEASE_TAG", "v1.2.0").lstrip("v")
           for apk in sorted(glob.glob("app/build/outputs/apk/debug/*.apk")):
               base = os.path.basename(apk)
-              # app-arm64-v8a-release.apk -> etecsa-toolkit-1.0.0-arm64-v8a.apk
+              # app-arm64-v8a-debug.apk -> etecsa-toolkit-<version>-arm64-v8a.apk
               abi = base.replace("app-","").replace("-debug.apk","").replace("debug.apk","universal")
-              shutil.copy(apk, f"release-assets/etecsa-toolkit-1.0.0-{abi}.apk")
+              shutil.copy(apk, f"release-assets/etecsa-toolkit-{version}-{abi}.apk")
           PY
           cd release-assets && sha256sum *.apk > SHA256SUMS.txt && ls -lh
       - name: Publish GitHub release
@@ -48,15 +52,14 @@ jobs:
           tag_name: ${{ inputs.tag }}
           name: ETECSA Toolkit ${{ inputs.tag }}
           body: |
-            **ETECSA Toolkit 1.0.0 — initial release.** A clean-room Material 3 Expressive rewrite of RoCla USSD: every feature, no Pro, no trial.
+            **ETECSA Toolkit 1.2.0.** The original RoCla layout, rebuilt with real Material 3 Expressive components — every feature, no Pro, no trial.
 
-            - Smart USSD consults (*222# family) with per-SIM parsed history, plans catalogue (15 plans), transfers / PIN / Adelanta Saldo / recharge cards, Plan Amigos
-            - Smart SMS (queue, send-on-coverage, blocked senders, SMSC), antifraud Protect, call log + blocker
-            - Nauta portal + mailbox, ETECSA online services, useful numbers
-            - Network: coverage monitor with **coverage-back alarm** (new), LTE/cell info, Cloudflare speed test, traffic, per-app firewall (local VPN)
-            - Contacts with photos, global search, Play-Store-style Settings, animated splash, predictive back, notification bubbles, widgets
+            - Home rebuilt on the original's layout: consult card (SIM 1/2 selector, balance, data/voice/SMS, validity, live last-consult stamp), signal card with live level, Favoritos (max 6, long-press to pin) and Servicios tile grids — de-duplicated, flat tiles
+            - Restored in v1.1/v1.2: scheduled SMS, quick replies, keyword auto-reply, SMS segment counter, all three original widgets, monthly transfer totals, the in-call suite (cut timer, respond-via-message), remind-me, birthday reminders, traffic overlay, consult auto-sync, plan-expiry reminders
+            - Official MD3E components throughout: HorizontalFloatingToolbar nav, SearchBar, LoadingIndicator, ButtonGroup SIM selector, AssistChip; dynamic color (Material You) on Android 12+
+            - Google Sans Flex as static instances (bold display type renders correctly on Android), Ernest's 'e' disc as the app mark — gradient only in the logo
+            - Smart USSD consults (*222# family), plans catalogue, transfers / PIN / Adelanta Saldo, Plan Amigos, smart SMS, antifraud Protect, call log + blocker, Nauta, network tools
             - Rust parser/antifraud core + C speed/traffic core; SQLite on-device; EN + ES
-            - New: always-visible SIM 1 / SIM 2 slot selector
 
             Pick your ABI: most phones are **arm64-v8a**; `universal` works everywhere.
           files: release-assets/*
