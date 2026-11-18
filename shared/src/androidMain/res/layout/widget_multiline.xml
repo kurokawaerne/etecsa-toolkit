@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="12dp"
+    android:background="@drawable/widget_bg">
+    <TextView android:id="@+id/widget_saldo"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:textColor="#FFFFFF" android:textSize="15sp" android:textStyle="bold"
+        android:text="Saldo: —" />
+    <TextView android:id="@+id/widget_datos"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:textColor="#EFFFFFFF" android:textSize="12sp" android:text="Datos: —" />
+    <TextView android:id="@+id/widget_voz"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:textColor="#EFFFFFFF" android:textSize="12sp" android:text="Voz: —" />
+    <TextView android:id="@+id/widget_sms"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:textColor="#EFFFFFFF" android:textSize="12sp" android:text="SMS: —" />
+</LinearLayout>
