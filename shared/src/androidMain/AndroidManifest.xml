@@ -21,6 +21,44 @@
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
+        <receiver android:name="dev.kurokawa.etecsa.toolkit.services.ScheduledSmsReceiver"
+            android:exported="false" />
+        <receiver android:name="dev.kurokawa.etecsa.toolkit.services.ReminderReceiver"
+            android:exported="false" />
+        <receiver android:name="dev.kurokawa.etecsa.toolkit.services.AutoSyncReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+        <service android:name="dev.kurokawa.etecsa.toolkit.services.TrafficOverlayService"
+            android:exported="false" />
+        <service android:name="dev.kurokawa.etecsa.toolkit.services.EtkInCallService"
+            android:permission="android.permission.BIND_INCALL_SERVICE" android:exported="true">
+            <meta-data android:name="android.telecom.IN_CALL_SERVICE_UI" android:value="true" />
+            <intent-filter>
+                <action android:name="android.telecom.InCallService" />
+            </intent-filter>
+        </service>
+        <activity android:name="dev.kurokawa.etecsa.toolkit.services.InCallActivity"
+            android:exported="false" android:launchMode="singleTop"
+            android:excludeFromRecents="true" />
+        <receiver android:name="dev.kurokawa.etecsa.toolkit.services.ResourceCompactWidget"
+            android:exported="false" android:label="ETECSA Toolkit compacto">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_compact" />
+        </receiver>
+        <receiver android:name="dev.kurokawa.etecsa.toolkit.services.MultiLineWidget"
+            android:exported="false" android:label="ETECSA Toolkit recursos">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_multiline" />
+        </receiver>
         <receiver android:name="dev.kurokawa.etecsa.toolkit.services.ResourceWidget"
             android:exported="false" android:label="ETECSA Toolkit">
             <intent-filter>
