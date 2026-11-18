@@ -2,8 +2,9 @@ package dev.kurokawa.etecsa.toolkit.model
 
 /** Service catalogue — mirrors the original app's own home list (extracted
  *  from RoCla USSD 5.4.3, MainActivity service table) with its exact USSD
- *  codes, regrouped into categories (Ernest). Titles stay in Spanish:
- *  they are ETECSA's service names. */
+ *  codes, kept in the original's flat order (v1.1: Home shows this list
+ *  as-is; the category field remains only as search/filter metadata).
+ *  Titles stay in Spanish: they are ETECSA's service names. */
 enum class Category(val en: String, val es: String) {
     QUERIES("Queries", "Consultas"),
     PLANS("Plans & purchases", "Planes y compras"),
